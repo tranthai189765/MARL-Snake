@@ -36,7 +36,7 @@ Phần render sẽ được Thái cập nhật để hiển thị đẹp và tr�
 **Có vấn đề gì nhắn Thái nhé mng!**
 
 
-#Luật chơi (Rules)
+# Luật chơi (Rules)
 
 Nhiều rắn (snakes) sẽ chiến đấu trên một bản đồ dạng lưới có kích thước cố định.
 
@@ -56,7 +56,7 @@ Khi chỉ còn một rắn sống sót, nó sẽ nhận thưởng “win” cho 
 
 Rắn lớn thêm 1 pixel khi ăn được trái cây (fruit).
 
-**Dạng quan sát (Observation Types)**
+# Dạng quan sát (Observation Types)
 
 Quan sát được thể hiện dưới dạng lưới hình ảnh (image grid) theo thứ tự NHWC. (Batch_size - Height - Width - Channel)
 
@@ -74,12 +74,6 @@ env = gym.make(
     vision_range=5,  # Tầm nhìn (nếu None thì trả về toàn bản đồ)
     frame_stack=1,   # Số lượng khung quan sát được stack lại
 )
-```
-
-Môi trường single-agent
-```
-env = gym.make('Snake-v1', num_snakes=1)
-env = marlenv.wrappers.SingleAgent(env)
 ```
 
 **Hàm make_snake()**
