@@ -8,7 +8,7 @@ git clone https://github.com/tranthai189765/MARL-Snake.git
 ```
 cd marlenv
 ```
-**3. Cài đặt môi trường**
+**3. Cài đặt môi trường (Python 3.10)**
 ```
 pip install -e . --use-pep517
 ```
@@ -32,12 +32,11 @@ Sau đó làm lại các bước 2 → 4 ở trên.
 **Lưu ý**
 
 Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé. 
-**Python 3.10 nhé mng!!!**
 
 **Có vấn đề gì nhắn Thái nhé mng!**
 
 
-**Luật chơi (Rules)**
+#Luật chơi (Rules)
 
 Nhiều rắn (snakes) sẽ chiến đấu trên một bản đồ dạng lưới có kích thước cố định.
 
