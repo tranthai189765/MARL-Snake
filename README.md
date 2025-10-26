@@ -1,4 +1,4 @@
-**Hướng dẫn cài đặt môi trường MARL-Snake**
+# Hướng dẫn cài đặt môi trường MARL-Snake
 
 **1. Clone repository**
 ```
@@ -56,7 +56,7 @@ Khi chỉ còn một rắn sống sót, nó sẽ nhận thưởng “win” cho 
 
 Rắn lớn thêm 1 pixel khi ăn được trái cây (fruit).
 
-# Dạng quan sát (Observation Types)
+**Dạng quan sát (Observation Types)**
 
 Quan sát được thể hiện dưới dạng lưới hình ảnh (image grid) theo thứ tự NHWC. (Batch_size - Height - Width - Channel)
 
