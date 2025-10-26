@@ -82,13 +82,14 @@ env = gym.make('Snake-v1', num_snakes=1)
 env = marlenv.wrappers.SingleAgent(env)
 ```
 
-🐍 Hàm make_snake()
+**Hàm make_snake()**
+```
 env, observation_space, action_space, properties = marlenv.wrappers.make_snake(
     num_envs=1,     # Số lượng môi trường (để xác định vector env hay không)
     num_snakes=1,   # Số lượng rắn (single/multi-agent)
     **kwargs        # Các tham số khác
 )
-
+```
 
 Các giá trị trả về gồm:
 
