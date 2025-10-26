@@ -60,13 +60,13 @@ Rắn lớn thêm 1 pixel khi ăn được trái cây (fruit).
 
 Quan sát được thể hiện dưới dạng lưới hình ảnh (image grid) theo thứ tự NHWC. (Batch_size - Height - Width - Channel)
 
-**Ví dụ khởi tạo môi trường**
+# Ví dụ khởi tạo môi trường
 ```
 import gym
 import marlenv
-
-env = gym.make(
-    'Snake-v1',
+from marlenv.marlenv.wrappers import make_snake, RenderGUI
+env, obs_shape, action_shape, properties = make_snake(
+    num_envs=1,      # Số lượng môi trường
     height=20,       # Chiều cao bản đồ
     width=20,        # Chiều rộng bản đồ
     num_snakes=4,    # Số lượng rắn trên bản đồ
@@ -74,18 +74,11 @@ env = gym.make(
     vision_range=5,  # Tầm nhìn (nếu None thì trả về toàn bản đồ)
     frame_stack=1,   # Số lượng khung quan sát được stack lại
 )
+
+env = RenderGUI(env)
 ```
 
-**Hàm make_snake()**
-```
-env, observation_space, action_space, properties = marlenv.wrappers.make_snake(
-    num_envs=1,     # Số lượng môi trường (để xác định vector env hay không)
-    num_snakes=1,   # Số lượng rắn (single/multi-agent)
-    **kwargs        # Các tham số khác
-)
-```
-
-Các giá trị trả về gồm:
+**Các giá trị trả về gồm:**
 
 env: đối tượng môi trường
 
@@ -107,7 +100,9 @@ properties: dict chứa thông tin:
 
 + action_info: {action_high, action_low} nếu là liên tục hoặc {action_n} nếu là rời rạc
 
-**Hàm thưởng tùy chỉnh (Custom Reward Function)**
+**Lưu ý: Để render được môi trường thì mng cần bọc env = RenderGUI(env) nhé, cái này Thái mới thêm**
+
+# Hàm thưởng tùy chỉnh (Custom Reward Function)
 
 Người dùng có thể tùy chỉnh cấu trúc hàm thưởng khi khởi tạo môi trường.
 
