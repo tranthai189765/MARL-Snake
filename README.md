@@ -100,7 +100,10 @@ properties: dict chứa thông tin:
 
 + action_info: {action_high, action_low} nếu là liên tục hoặc {action_n} nếu là rời rạc
 
-**Lưu ý: Để render được môi trường thì mng cần bọc env = RenderGUI(env) nhé, cái này Thái mới thêm**
+**Lưu ý: Để render được môi trường thì mng cần bọc env như này nhé, cái này Thái mới thêm:** 
+```
+env = RenderGUI(env)
+```
 
 # Hàm thưởng tùy chỉnh (Custom Reward Function)
 
