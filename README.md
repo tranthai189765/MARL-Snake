@@ -31,7 +31,8 @@ Sau đó làm lại các bước 2 → 4 ở trên.
 
 **Lưu ý**
 
-Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé.
+Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé. 
+**Python 3.10 nhé mng!!!**
 
 **Có vấn đề gì nhắn Thái nhé mng!**
 
@@ -60,7 +61,7 @@ Rắn lớn thêm 1 pixel khi ăn được trái cây (fruit).
 
 Quan sát được thể hiện dưới dạng lưới hình ảnh (image grid) theo thứ tự NHWC. (Batch_size - Height - Width - Channel)
 
-🧩 Ví dụ khởi tạo môi trường
+**Ví dụ khởi tạo môi trường**
 ```
 import gym
 import marlenv
