@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: marlenv
+Version: 1.0.0
+Home-page: https://github.com/kc-ml2/marlenv
+Author: Tae Min Ha, Daniel Nam, Won Seok Jung
+Author-email: contact@kc-ml2.com
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: gym==0.24.1
+Dynamic: author
+Dynamic: author-email
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
