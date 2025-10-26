@@ -35,6 +35,105 @@ Phần render sẽ được Thái cập nhật để hiển thị đẹp và tr�
 
 **Có vấn đề gì nhắn Thái nhé mng!**
 
+
+**Luật chơi (Rules)**
+
+Nhiều rắn (snakes) sẽ chiến đấu trên một bản đồ dạng lưới có kích thước cố định.
+
+Mỗi con rắn được sinh ra tại một vị trí ngẫu nhiên với hướng di chuyển ban đầu ngẫu nhiên khi gọi reset().
+
+Bản đồ có thể được khởi tạo với các bức tường khác nhau tùy vào cài đặt môi trường.
+
+Rắn sẽ chết nếu đầu của nó va chạm với tường hoặc thân của rắn khác.
+
+Rắn gây ra cái chết sẽ nhận thưởng “kill”,
+
+Rắn chết sẽ nhận phạt “lose”.
+
+Nếu nhiều rắn va đầu vào nhau cùng lúc, tất cả đều chết mà không nhận điểm kill.
+
+Khi chỉ còn một rắn sống sót, nó sẽ nhận thưởng “win” cho mỗi đơn vị thời gian sống sót thêm.
+
+Rắn lớn thêm 1 pixel khi ăn được trái cây (fruit).
+
+**Dạng quan sát (Observation Types)**
+
+Quan sát được thể hiện dưới dạng lưới hình ảnh (image grid) theo thứ tự NHWC. (Batch_size - Height - Width - Channel)
+
+🧩 Ví dụ khởi tạo môi trường
+```
+import gym
+import marlenv
+
+env = gym.make(
+    'Snake-v1',
+    height=20,       # Chiều cao bản đồ
+    width=20,        # Chiều rộng bản đồ
+    num_snakes=4,    # Số lượng rắn trên bản đồ
+    snake_length=3,  # Độ dài khởi tạo của rắn
+    vision_range=5,  # Tầm nhìn (nếu None thì trả về toàn bản đồ)
+    frame_stack=1,   # Số lượng khung quan sát được stack lại
+)
+```
+
+Môi trường single-agent
+```
+env = gym.make('Snake-v1', num_snakes=1)
+env = marlenv.wrappers.SingleAgent(env)
+```
+
+🐍 Hàm make_snake()
+env, observation_space, action_space, properties = marlenv.wrappers.make_snake(
+    num_envs=1,     # Số lượng môi trường (để xác định vector env hay không)
+    num_snakes=1,   # Số lượng rắn (single/multi-agent)
+    **kwargs        # Các tham số khác
+)
+
+
+Các giá trị trả về gồm:
+
+env: đối tượng môi trường
+
+observation_space: không gian quan sát đã được xử lý
+
+action_space: không gian hành động
+
+properties: dict chứa thông tin:
+
++ high: giá trị quan sát tối đa
+
++ low: giá trị quan sát tối thiểu
+
++ num_envs: số lượng môi trường
+
++ num_snakes: số rắn được sinh ra
+
++ discrete: True nếu không gian hành động là rời rạc
+
++ action_info: {action_high, action_low} nếu là liên tục hoặc {action_n} nếu là rời rạc
+
+**Hàm thưởng tùy chỉnh (Custom Reward Function)**
+
+Người dùng có thể tùy chỉnh cấu trúc hàm thưởng khi khởi tạo môi trường.
+
+Ví dụ:
+```
+custom_reward_func = {
+    'fruit': 1.0,  # Thưởng khi ăn trái cây
+    'kill': 0.0,   # Thưởng khi giết rắn khác
+    'lose': 0.0,   # Phạt khi chết
+    'time': 0.0,   # Thưởng theo thời gian sống sót
+    'win': 0.0     # Thưởng khi là rắn cuối cùng còn sống
+}
+
+env = gym.make('snake-v1', reward_func=custom_reward_func)
+```
+
+Mỗi phần thưởng có thể là số thực dương hoặc âm, tùy ý người dùng.
+
+
+
+
 Render hiện tại:
 
 <img width="619" height="677" alt="image" src="https://github.com/user-attachments/assets/24cb4833-27b2-4b07-bd41-8cec943e6f7f" />
