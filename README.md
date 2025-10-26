@@ -33,9 +33,10 @@ Sau đó làm lại các bước 2 → 4 ở trên.
 
 Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé.
 
-Có vấn đề gì nhắn Thái nhé mng <3 !
+**Có vấn đề gì nhắn Thái nhé mng!**
 
 Render hiện tại:
 
-<img width="680" height="733" alt="image" src="https://github.com/user-attachments/assets/8187ca73-6eb7-44c5-b882-3a48f255e57c" />
+<img width="619" height="677" alt="image" src="https://github.com/user-attachments/assets/24cb4833-27b2-4b07-bd41-8cec943e6f7f" />
+
 
