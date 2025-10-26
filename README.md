@@ -129,7 +129,7 @@ Mỗi phần thưởng có thể là số thực dương hoặc âm, tùy ý ng�
 
 
 
-Render hiện tại:
+**Render hiện tại:**
 
 <img width="619" height="677" alt="image" src="https://github.com/user-attachments/assets/24cb4833-27b2-4b07-bd41-8cec943e6f7f" />
 
