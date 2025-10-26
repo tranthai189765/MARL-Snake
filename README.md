@@ -1,4 +1,5 @@
 **Hướng dẫn cài đặt môi trường MARL-Snake**
+
 **1. Clone repository**
 ```
 git clone https://github.com/tranthai189765/MARL-Snake.git
@@ -31,3 +32,10 @@ Sau đó làm lại các bước 2 → 4 ở trên.
 **Lưu ý**
 
 Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé.
+
+Có vấn đề gì nhắn Thái nhé mng <3 !
+
+Render hiện tại:
+
+<img width="680" height="733" alt="image" src="https://github.com/user-attachments/assets/8187ca73-6eb7-44c5-b882-3a48f255e57c" />
+
