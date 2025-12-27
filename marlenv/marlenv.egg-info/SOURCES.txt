@@ -1,4 +1,3 @@
-README.md
 setup.py
 marlenv/__init__.py
 marlenv/wrappers.py

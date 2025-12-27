@@ -2,8 +2,7 @@ import io
 import os
 import shutil
 import sys
-
-import gym
+import gymnasium as gym
 import marlenv
 import pytest
 from PIL import Image

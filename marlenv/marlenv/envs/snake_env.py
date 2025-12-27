@@ -7,7 +7,7 @@ import datetime
 import warnings
 
 import numpy as np
-import gym
+import gymnasium as gym
 from gym.utils import seeding
 
 from marlenv.core.grid_util import (
@@ -116,7 +116,14 @@ class SnakeEnv(gym.Env):
                 dtype=np.uint8
             )
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
+        # Support Gymnasium API: accept seed and options and return (obs, info)
+        if seed is not None:
+            try:
+                self.seed(seed)
+            except Exception:
+                pass
+
         # Create the grid base
         self.grid = make_grid(*self.grid_shape,
                               empty_value=Cell.EMPTY.value,
@@ -144,7 +151,8 @@ class SnakeEnv(gym.Env):
         self._reset_epi_stats()
         self.episode_length = 0
 
-        return np.array(obs, dtype=np.uint8)
+        # Return in Gymnasium format: (observation, info)
+        return np.array(obs, dtype=np.uint8), {}
 
     def seed(self, seed=42):
         self.np_random, seed = seeding.np_random(seed)
@@ -488,6 +496,13 @@ class SnakeEnv(gym.Env):
         2 == right
         Change direction by +-90 degrees
         """
+        # Defensive: action may sometimes be a list/np.ndarray (from wrappers); extract int
+        if isinstance(action, (list, tuple)) or (hasattr(action, 'shape') and not isinstance(action, (int,))):
+            try:
+                action = int(action[0])
+            except Exception:
+                action = int(action)
+
         angle = math.atan2(direction.value[1], direction.value[0])
         new_coord = (int(math.cos(angle + self.action_angle_dict[action])),
                      int(math.sin(angle + self.action_angle_dict[action])))

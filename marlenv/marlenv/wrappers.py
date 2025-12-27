@@ -3,7 +3,7 @@ from enum import Enum
 import multiprocessing as mp
 import numpy as np
 
-import gym
+import gymnasium as gym
 from gym.vector.async_vector_env import AsyncVectorEnv
 from gym.error import AlreadyPendingCallError, NoAsyncCallError
 from gym.vector.utils import write_to_shared_memory
@@ -22,7 +22,15 @@ class RenderGUI(gym.Wrapper):
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
     def render(self, mode='human', **kwargs):
-        img = self.env.render(mode='rgb_array')  # lấy mảng hình
+        # Try multiple call styles for env.render to be compatible with Gym/Gymnasium/wrappers
+        try:
+            img = self.env.render(mode='rgb_array')
+        except TypeError:
+            try:
+                img = self.env.render('rgb_array')
+            except TypeError:
+                img = self.env.render()
+
         if img is not None:
             cv2.imshow(self.window_name, img)
             cv2.waitKey(1)  # 1ms delay để hiển thị
@@ -35,10 +43,22 @@ class RenderGUI(gym.Wrapper):
 class SingleAgent(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        assert env.num_snakes == 1, "Number of player must be one"
-        self.action_space = gym.spaces.Discrete(len(self.env.action_dict))
-        if self.vision_range:
-            h = w = self.vision_range * 2 + 1
+        # The env passed in may be wrapped (OrderEnforcing/TimeLimit). Use the unwrapped env
+        base = getattr(env, 'unwrapped', env)
+        assert getattr(base, 'num_snakes', None) == 1, "Number of player must be one"
+
+        # Action and observation spaces based on the underlying env properties
+        action_dict = getattr(base, 'action_dict', {0: 0})
+        self.action_space = gym.spaces.Discrete(len(action_dict))
+
+        vision_range = getattr(base, 'vision_range', None)
+        self.obs_ch = getattr(base, 'obs_ch', getattr(base, 'observation_space', None).shape[-1] if getattr(base, 'observation_space', None) is not None else 8)
+        self.low = getattr(base, 'low', 0)
+        self.high = getattr(base, 'high', 255)
+        self.grid_shape = getattr(base, 'grid_shape', (20, 20))
+
+        if vision_range:
+            h = w = vision_range * 2 + 1
             self.observation_space = gym.spaces.Box(
                 self.low, self.high,
                 shape=(h, w, self.obs_ch), dtype=np.uint8)  # 8
@@ -59,9 +79,19 @@ class SingleAgent(gym.Wrapper):
 class SingleMultiAgent(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.action_space = gym.spaces.Discrete(len(self.env.action_dict))
-        if self.vision_range:
-            h = w = self.vision_range * 2 + 1
+        base = getattr(env, 'unwrapped', env)
+        action_dict = getattr(base, 'action_dict', {0: 0})
+        self.action_space = gym.spaces.Discrete(len(action_dict))
+
+        self.num_snakes = getattr(base, 'num_snakes', 1)
+        vision_range = getattr(base, 'vision_range', None)
+        self.obs_ch = getattr(base, 'obs_ch', getattr(base, 'observation_space', None).shape[-1] if getattr(base, 'observation_space', None) is not None else 8)
+        self.low = getattr(base, 'low', 0)
+        self.high = getattr(base, 'high', 255)
+        self.grid_shape = getattr(base, 'grid_shape', (20, 20))
+
+        if vision_range:
+            h = w = vision_range * 2 + 1
             self.observation_space = gym.spaces.Box(
                 self.low, self.high,
                 shape=(self.num_snakes, h, w, self.obs_ch), dtype=np.uint8)

@@ -132,3 +132,44 @@ Mỗi phần thưởng có thể là số thực dương hoặc âm, tùy ý ng�
 <img width="619" height="677" alt="image" src="https://github.com/user-attachments/assets/24cb4833-27b2-4b07-bd41-8cec943e6f7f" />
 
 
+## Chạy NEAT (Huấn luyện) 
+
+Nếu bạn muốn huấn luyện mạng NEAT (script mặc định `neat_algo.py`):
+
+1. Cài các phụ thuộc (từ root của repo):
+
+```bash
+# Cài package marlenv (cần để import các env)
+cd marlenv
+pip install -e . --use-pep517
+# Cài các thư viện cần thiết
+pip install -r requirements.txt
+# Phiên bản Gym tương thích (nếu cần)
+pip install gym==0.23.1
+# Thư viện NEAT
+pip install neat-python
+```
+
+2. Chạy huấn luyện (từ thư mục gốc project):
+
+```bash
+cd d:\MARL-Snake
+python neat_algo.py
+```
+
+- `neat_algo.py` sẽ tạo/cập nhật file `config-neat-snake.ini` nếu cần, bắt đầu huấn luyện (mặc định 50 thế hệ), và lưu winner vào `winner_snake_genome.pkl`.
+
+3. Chạy runner thay thế (nếu bạn muốn dùng `neat_runner.py`):
+
+```bash
+python marlenv\marlenv\logic\neat_runner.py
+```
+
+4. Kiểm tra lại model thắng (Winner):
+
+```bash
+# Tải và xem winner đã lưu
+python -c "from neat_algo import load_and_test_winner; load_and_test_winner()"
+```
+
+

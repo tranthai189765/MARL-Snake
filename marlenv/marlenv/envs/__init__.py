@@ -1,4 +1,8 @@
-from gym.envs.registration import register
+# Use Gymnasium's register when available to ensure registration goes into the same registry
+try:
+    from gymnasium.envs.registration import register
+except Exception:
+    from gym.envs.registration import register
 
 register(
     id='Snake-v1',
