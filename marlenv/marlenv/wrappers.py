@@ -219,7 +219,9 @@ def make_snake(num_envs=1, num_snakes=4, env_id="Snake-v1", **kwargs):
         vec_wrapper = AsyncVectorMultiEnv
 
     def _make():
-        env = gym.make(env_id, num_snakes=num_snakes, **kwargs)
+        # Tạo env trực tiếp để tránh gym.make wrappers
+        from marlenv.envs.snake_env import SnakeEnv
+        env = SnakeEnv(num_snakes=num_snakes, **kwargs)
         env = env_wrapper(env)
         return env
 

@@ -9,17 +9,17 @@ env, obs_shape, action_shape, properties = make_snake(
     vision_range=5
 )
 
-env = RenderGUI(env)  # bọc thêm render GUI
+env = RenderGUI(env)  # bật lại render GUI
 
 obs = env.reset()
-done = [False] * properties['num_snakes']
+dones = [False] * properties['num_snakes']
 
 import time
-while not all(done):
+while not all(dones):
     env.render()
     actions = [env.action_space.sample() for _ in range(properties['num_snakes'])]
-    obs, rewards, done, infos = env.step(actions)
-    print("obs = ", obs)
+    obs, rewards, dones, infos = env.step(actions)
+    print("Rewards:", rewards, "Dones:", dones)
     time.sleep(0.2)
 
 env.close()
