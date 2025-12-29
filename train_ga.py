@@ -65,7 +65,7 @@ num_inputs             = {INPUT_SIZE}
 num_outputs            = 0 
 num_hidden             = 2
 num_layers             = 1
-initial_connection     = full
+initial_connection     = full_direct
 
 feed_forward           = True
 compatibility_disjoint_coefficient = 1.0
