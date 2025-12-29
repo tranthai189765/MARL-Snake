@@ -33,7 +33,7 @@ class Config:
     # Training
     NUM_EPISODES = 50000
     MAX_STEPS_PER_EPISODE = 128
-    BATCH_SIZE = 1024
+    BATCH_SIZE = 512
     GAMMA = 0.99
     LR = 5e-4
    
@@ -42,8 +42,8 @@ class Config:
     EPSILON_DECAY = 0.9995
    
     # Replay Buffer
-    BUFFER_SIZE = 30000  
-    MIN_BUFFER_SIZE = BATCH_SIZE * 5
+    BUFFER_SIZE = 10000            
+    MIN_BUFFER_SIZE = BATCH_SIZE * 3
    
     # Target Network
     TARGET_UPDATE_FREQ = 100
