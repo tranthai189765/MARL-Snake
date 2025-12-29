@@ -163,30 +163,25 @@ def normalize_dist(dist):
 
 def obs_to_input_vector(obs_snake: np.ndarray):
     """
-    Trích xuất 24 tính năng (Raycasting).
-    Sửa lỗi: Tìm vị trí đầu rắn thực sự thay vì giả định ở giữa.
+    Trích xuất 24 tính năng dựa trên 8 channels:
+    0:Wall, 1:Fruit, 2:OtherHead, 3:OtherBody, 4:OtherTail, 5:MyHead, 6:MyBody, 7:MyTail
     """
     H, W, C = obs_snake.shape
     
-    # --- FIX QUAN TRỌNG: Tìm đầu rắn ---
-    # Giả định channel 0 là đầu rắn (cần check kỹ channel của marlenv)
-    # Thường marlenv default: 0: Head, 1: Body, 2: Fruit (hoặc 3 tuỳ version)
-    # Ta sẽ quét để tìm toạ độ đầu rắn
-    head_pos = np.where(obs_snake[:, :, 0] == 1) # Tìm channel đầu
+    # --- TÌM VỊ TRÍ ĐẦU CỦA MÌNH (Channel 5) ---
+    head_pos = np.where(obs_snake[:, :, 5] == 1)
     if len(head_pos[0]) > 0:
         center_y, center_x = head_pos[0][0], head_pos[1][0]
     else:
-        # Trường hợp không thấy đầu (hiếm), fallback về giữa
-        center_y, center_x = H // 2, W // 2
+        # Nếu không thấy đầu mình (đã chết), trả về vector 0
+        return np.zeros(24, dtype=np.float32)
 
-    # 8 Hướng nhìn
     DIRECTIONS = [
         (-1, 0), (-1, 1), (0, 1), (1, 1),   # Up, Up-Right, Right, Down-Right
         (1, 0), (1, -1), (0, -1), (-1, -1)  # Down, Down-Left, Left, Up-Left
     ]
     
     input_vector = []
-    # Khoảng cách tối đa có thể nhìn (đường chéo map)
     max_scan_range = max(H, W)
 
     for dy, dx in DIRECTIONS:
@@ -194,36 +189,29 @@ def obs_to_input_vector(obs_snake: np.ndarray):
         food_dist = 0
         obstacle_dist = 0
         
-        # Raycasting
         for k in range(1, max_scan_range):
             y, x = center_y + dy * k, center_x + dx * k
 
-            # 1. Check TƯỜNG (Ra khỏi map)
-            if not (0 <= y < H and 0 <= x < W):
-                if wall_dist == 0:
-                    wall_dist = k
-                break # Gặp tường là dừng tia nhìn ngay
+            # 1. Check TƯỜNG (Channel 0 hoặc ra ngoài biên)
+            if not (0 <= y < H and 0 <= x < W) or obs_snake[y, x, 0] == 1.0:
+                if wall_dist == 0: wall_dist = k
+                # Nếu gặp tường thì dừng tia này luôn vì không nhìn xuyên tường được
+                break 
 
-            # 2. Check FOOD (Thường là channel 3 hoặc 2 - Kiểm tra config marlenv)
-            # Với marlenv mặc định, Fruit thường là channel cuối hoặc channel 2
-            # Hãy thử check sum các channel để chắc chắn
-            if obs_snake[y, x, 3] == 1.0 and food_dist == 0: # Giả sử 3 là fruit
+            # 2. Check FRUIT (Channel 1)
+            if obs_snake[y, x, 1] == 1.0 and food_dist == 0:
                 food_dist = k
 
-            # 3. Check CHƯỚNG NGẠI VẬT (Thân mình channel 1 hoặc 2)
-            # Channel 1: Body, Channel 2: Body (tuỳ setup)
-            is_body = obs_snake[y, x, 1] == 1.0 or obs_snake[y, x, 2] == 1.0
+            # 3. Check OBSTACLE (Thân mình, đuôi mình, và tất cả bộ phận của địch)
+            # Channels: 2, 3, 4 (Other) và 6, 7 (My Body/Tail)
+            is_obs = (obs_snake[y, x, 2] == 1.0 or obs_snake[y, x, 3] == 1.0 or 
+                      obs_snake[y, x, 4] == 1.0 or obs_snake[y, x, 6] == 1.0 or 
+                      obs_snake[y, x, 7] == 1.0)
             
-            # Check rắn khác (Nếu marlenv tách channel cho địch)
-            # Thường channel 4,5 là kẻ thù
-            is_enemy = False
-            if C > 4: 
-                is_enemy = (obs_snake[y, x, 4] == 1.0 or obs_snake[y, x, 5] == 1.0)
-
-            if (is_body or is_enemy) and obstacle_dist == 0:
+            if is_obs and obstacle_dist == 0:
                 obstacle_dist = k
 
-        # Chuẩn hoá input về 0..1 (1 là rất gần, 0 là rất xa/không thấy)
+        # Chuẩn hóa (1.0 là ngay sát cạnh, 0.0 là không thấy)
         input_vector.append(normalize_dist(wall_dist))
         input_vector.append(normalize_dist(food_dist))
         input_vector.append(normalize_dist(obstacle_dist))
