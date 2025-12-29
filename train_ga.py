@@ -57,7 +57,7 @@ DEFAULT_NEAT_CONFIG = f"""\
 fitness_criterion      = max
 fitness_threshold      = 1e9
 no_fitness_termination = True
-pop_size               = 300
+pop_size               = 500
 reset_on_extinction    = False
 
 [DefaultGenome]
