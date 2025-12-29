@@ -33,7 +33,7 @@ class Config:
     # Training
     NUM_EPISODES = 50000
     MAX_STEPS_PER_EPISODE = 128
-    BATCH_SIZE = 512
+    BATCH_SIZE = 1024
     GAMMA = 0.99
     LR = 5e-4
    
@@ -54,20 +54,20 @@ class Config:
     EARLY_DEATH_PENALTY = -1.0
    
     REWARD_DICT = {
-        'fruit': +2.0,
-        'kill': +5.0,
-        'lose': -10.0,
-        'win': +10.0,
-        'time': -0.02,
-    }
+    'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
+    'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
+    'lose': -10.0,     # Phạt nặng khi chết
+    'win': +10.0,
+    'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
+}
    
     REWARD_DICT_LATE = {
-        'fruit': +2.0,
-        'kill': +5.0,
-        'lose': -10.0,
-        'win': +10.0,
-        'time': -0.02,
-    }
+     'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
+     'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
+     'lose': -10.0,     # Phạt nặng khi chết
+     'win': +10.0,
+     'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
+ }
    
     # Checkpoints & Logs
     SAVE_FREQ = 500        
