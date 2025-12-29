@@ -43,11 +43,11 @@ ENV_KWARGS = dict(
     vision_range=None,
     # REWARD SHAPING (Đã tối ưu)
     reward_dict= {
-        'fruit': +2.0,
-        'kill': +5.0,
-        'lose': -10.0,
-        'win': +10.0,
-        'time': -0.02,
+    'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
+    'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
+    'lose': -10.0,     # Phạt nặng khi chết
+    'win': +10.0,
+    'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
     },
 )
 
