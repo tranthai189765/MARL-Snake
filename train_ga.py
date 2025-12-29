@@ -121,7 +121,7 @@ node_delete_prob        = 0.05
 
 [DefaultSpeciesSet]
 # Tăng threshold vì input vector lớn (24) tạo ra khoảng cách gen lớn
-compatibility_threshold = 2.0 
+compatibility_threshold = 3.0 
 
 [DefaultStagnation]
 species_fitness_func = max
