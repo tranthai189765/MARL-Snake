@@ -16,6 +16,11 @@ pip install -e . --use-pep517
 ```
 pip install gym==0.23.1
 ```
+
+```
+pip install torch tensorboard neat-python
+```
+
 **5. Kiểm tra cài đặt**
 
 Sau khi hoàn tất, chạy file test_env.py để kiểm tra môi trường hoạt động đúng.
