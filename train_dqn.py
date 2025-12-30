@@ -54,20 +54,20 @@ class Config:
     EARLY_DEATH_PENALTY = -1.0
    
     REWARD_DICT = {
-    'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
-    'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
-    'lose': -10.0,     # Phạt nặng khi chết
-    'win': +10.0,
-    'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
-}
+        'fruit': 10.0,
+        'kill': 0.0,
+        'lose': -20.0,
+        'win': 0.0,
+        'time': -0.1,
+    }
    
     REWARD_DICT_LATE = {
-     'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
-     'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
-     'lose': -10.0,     # Phạt nặng khi chết
-     'win': +10.0,
-     'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
- }
+        'fruit': 10.0,
+        'kill': 0.0,
+        'lose': -20.0,
+        'win': 0.0,
+        'time': -0.1,
+    }
    
     # Checkpoints & Logs
     SAVE_FREQ = 500        
