@@ -72,7 +72,7 @@ class Config:
     # Checkpoints & Logs
     SAVE_FREQ = 500        
     SAVE_BEST_ONLY = True    
-    KEEP_LAST_N = 3        
+    KEEP_LAST_N = 2        
     SAVE_DIR = "checkpoints"
     LOG_DIR = "runs_dqn"  # Thư mục cho Tensorboard
     RESUME_FROM = None      
