@@ -32,7 +32,7 @@ WINNER_FILE = "winner_snake_genome.pkl"
 MAX_SNAKES_PER_ENV = 4      
 EPISODES_PER_EVAL = 3       
 MAX_STEPS_PER_EPISODE = 200 # Tăng bước tối đa lên chút
-GENERATIONS = 100           # Cần train lâu hơn vì bài toán khó hơn
+GENERATIONS = 30           # Cần train lâu hơn vì bài toán khó hơn
 INPUT_SIZE = 26             # UPDATE: 24 cảm biến + 2 hướng táo (dx, dy)
 STARVATION_LIMIT = 60       # UPDATE: Số bước tối đa cho phép nhịn đói
 
