@@ -14,25 +14,27 @@ except ImportError:
     import gym
     print("Sử dụng Gym.")
 
-from marlenv.marlenv.wrappers import make_snake, RenderGUI
-
-# Đăng ký môi trường marlenv
+# Xử lý lỗi import marlenv trên Kaggle/Colab
 try:
+    from marlenv.marlenv.wrappers import make_snake, RenderGUI
     import importlib
     importlib.import_module('marlenv.marlenv.envs')
 except Exception as e:
-    print(f"Warning: could not import marlenv.marlenv.envs: {e}")
+    print(f"Warning: could not import marlenv correctly: {e}")
+    # Fallback cho trường hợp chạy local nếu cần
+    pass
 
 # --- CẤU HÌNH TOÀN CỤC ---
 CONFIG_PATH = "config-neat-snake.ini"
 WINNER_FILE = "winner_snake_genome.pkl"
 
 # Cấu hình môi trường & Training
-MAX_SNAKES_PER_ENV = 4      # Số lượng rắn trong 1 phòng (Training & Test)
-EPISODES_PER_EVAL = 3       # QUAN TRỌNG: Chạy 5 ván lấy trung bình để giảm nhiễu
-MAX_STEPS_PER_EPISODE = 128 # Tăng bước tối đa để rắn kịp ăn hết mồi
-GENERATIONS = 50            # Số thế hệ training (tăng lên để kịp hội tụ)
-INPUT_SIZE = 24             # 8 hướng x 3 loại vật thể
+MAX_SNAKES_PER_ENV = 4      
+EPISODES_PER_EVAL = 3       
+MAX_STEPS_PER_EPISODE = 200 # Tăng bước tối đa lên chút
+GENERATIONS = 100           # Cần train lâu hơn vì bài toán khó hơn
+INPUT_SIZE = 26             # UPDATE: 24 cảm biến + 2 hướng táo (dx, dy)
+STARVATION_LIMIT = 60       # UPDATE: Số bước tối đa cho phép nhịn đói
 
 ENV_KWARGS = dict(
     num_envs=1,
@@ -41,13 +43,13 @@ ENV_KWARGS = dict(
     width=20,
     snake_length=5,
     vision_range=None,
-    # REWARD SHAPING (Đã tối ưu)
+    # REWARD SHAPING (Đã tối ưu để trị bệnh đi vòng tròn)
     reward_dict= {
-    'fruit': +5.0,     # Rất cao: Khuyến khích ăn mồi tối đa
-    'kill': +0.0,      # Không thưởng: Không khuyến khích đánh nhau
-    'lose': -10.0,     # Phạt nặng khi chết
-    'win': +10.0,
-    'time': -0.01,     # Phạt nhẹ: Để nó thong thả tìm mồi
+        'fruit': +10.0,    # Thưởng lớn để kích thích ăn
+        'kill': +2.0,      # Thưởng nhỏ nếu giết được đối thủ (tùy chọn)
+        'lose': -5.0,      # Phạt vừa phải (đừng phạt quá nặng khiến nó sợ đi)
+        'win': +20.0,
+        'time': -0.1,      # Phạt thời gian nặng hơn để ép đi nhanh
     },
 )
 
@@ -57,7 +59,7 @@ DEFAULT_NEAT_CONFIG = f"""\
 fitness_criterion      = max
 fitness_threshold      = 1e9
 no_fitness_termination = True
-pop_size               = 500
+pop_size               = 300 
 reset_on_extinction    = False
 
 [DefaultGenome]
@@ -113,14 +115,13 @@ enabled_rate_to_false_add = 0.0
 enabled_default        = True
 enabled_mutate_rate    = 0.01
 
-# === Mutation probabilities (BẮT BUỘC) ===
-conn_add_prob           = 0.4
+# === Mutation probabilities ===
+conn_add_prob           = 0.5
 conn_delete_prob        = 0.2
-node_add_prob           = 0.2
-node_delete_prob        = 0.05
+node_add_prob           = 0.3
+node_delete_prob        = 0.1
 
 [DefaultSpeciesSet]
-# Tăng threshold vì input vector lớn (24) tạo ra khoảng cách gen lớn
 compatibility_threshold = 3.0 
 
 [DefaultStagnation]
@@ -138,7 +139,6 @@ survival_threshold   = 0.2
 
 def ensure_neat_config(path: str = CONFIG_PATH):
     """Tạo hoặc cập nhật file config NEAT."""
-    # Lấy số actions thực tế từ môi trường giả lập
     try:
         kwargs = dict(ENV_KWARGS)
         kwargs["num_snakes"] = 1
@@ -146,42 +146,39 @@ def ensure_neat_config(path: str = CONFIG_PATH):
         n_actions = env_temp.action_space.n
         env_temp.close()
     except:
-        n_actions = 3 # Mặc định nếu lỗi
+        n_actions = 3
 
-    # Luôn ghi đè để đảm bảo config mới nhất được áp dụng
     content = DEFAULT_NEAT_CONFIG.replace("num_outputs            = 0", f"num_outputs            = {n_actions}")
-    
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"--> Đã cập nhật file config: Inputs={INPUT_SIZE}, Outputs={n_actions}")
 
 def normalize_dist(dist):
-    """Hàm chuẩn hóa khoảng cách: Gần = 1, Xa = 0"""
-    if dist == 0:
-        return 0.0
+    if dist == 0: return 0.0
     return 1.0 / dist
 
 def obs_to_input_vector(obs_snake: np.ndarray):
     """
-    Trích xuất 24 tính năng dựa trên 8 channels:
-    0:Wall, 1:Fruit, 2:OtherHead, 3:OtherBody, 4:OtherTail, 5:MyHead, 6:MyBody, 7:MyTail
+    Input: 26 features.
+    - 24 features từ Ray-casting (8 hướng x (Tường, Mồi, Vật cản))
+    - 2 features hướng tổng quát tới quả táo (dx, dy)
     """
     H, W, C = obs_snake.shape
     
-    # --- TÌM VỊ TRÍ ĐẦU CỦA MÌNH (Channel 5) ---
+    # 1. Tìm đầu rắn
     head_pos = np.where(obs_snake[:, :, 5] == 1)
     if len(head_pos[0]) > 0:
         center_y, center_x = head_pos[0][0], head_pos[1][0]
     else:
-        # Nếu không thấy đầu mình (đã chết), trả về vector 0
-        return np.zeros(24, dtype=np.float32)
+        return np.zeros(INPUT_SIZE, dtype=np.float32)
 
-    DIRECTIONS = [
-        (-1, 0), (-1, 1), (0, 1), (1, 1),   # Up, Up-Right, Right, Down-Right
-        (1, 0), (1, -1), (0, -1), (-1, -1)  # Down, Down-Left, Left, Up-Left
-    ]
-    
     input_vector = []
+
+    # 2. Ray-casting (Quét xung quanh)
+    DIRECTIONS = [
+        (-1, 0), (-1, 1), (0, 1), (1, 1),   
+        (1, 0), (1, -1), (0, -1), (-1, -1)  
+    ]
     max_scan_range = max(H, W)
 
     for dy, dx in DIRECTIONS:
@@ -192,133 +189,144 @@ def obs_to_input_vector(obs_snake: np.ndarray):
         for k in range(1, max_scan_range):
             y, x = center_y + dy * k, center_x + dx * k
 
-            # 1. Check TƯỜNG (Channel 0 hoặc ra ngoài biên)
+            # Check TƯỜNG
             if not (0 <= y < H and 0 <= x < W) or obs_snake[y, x, 0] == 1.0:
                 if wall_dist == 0: wall_dist = k
-                # Nếu gặp tường thì dừng tia này luôn vì không nhìn xuyên tường được
                 break 
 
-            # 2. Check FRUIT (Channel 1)
+            # Check FRUIT
             if obs_snake[y, x, 1] == 1.0 and food_dist == 0:
                 food_dist = k
 
-            # 3. Check OBSTACLE (Thân mình, đuôi mình, và tất cả bộ phận của địch)
-            # Channels: 2, 3, 4 (Other) và 6, 7 (My Body/Tail)
+            # Check OBSTACLE (Thân mình + Địch)
             is_obs = (obs_snake[y, x, 2] == 1.0 or obs_snake[y, x, 3] == 1.0 or 
                       obs_snake[y, x, 4] == 1.0 or obs_snake[y, x, 6] == 1.0 or 
                       obs_snake[y, x, 7] == 1.0)
-            
             if is_obs and obstacle_dist == 0:
                 obstacle_dist = k
 
-        # Chuẩn hóa (1.0 là ngay sát cạnh, 0.0 là không thấy)
         input_vector.append(normalize_dist(wall_dist))
         input_vector.append(normalize_dist(food_dist))
         input_vector.append(normalize_dist(obstacle_dist))
 
+    # 3. UPDATE: Thêm hướng tổng quát tới quả táo (Global Vision)
+    # Giúp rắn biết táo ở đâu dù tia quét không trúng
+    fruit_pos = np.where(obs_snake[:, :, 1] == 1)
+    fruit_dx = 0.0
+    fruit_dy = 0.0
+    
+    if len(fruit_pos[0]) > 0:
+        fy, fx = fruit_pos[0][0], fruit_pos[1][0]
+        # Chuẩn hóa về [-1, 1]
+        fruit_dy = (fy - center_y) / float(H)
+        fruit_dx = (fx - center_x) / float(W)
+        
+    input_vector.append(fruit_dy)
+    input_vector.append(fruit_dx)
+
     return np.array(input_vector, dtype=np.float32)
 
 def eval_group(genome_group, config):
-    """Đánh giá 1 nhóm rắn."""
     num_snakes = len(genome_group)
-    
-    # Tạo môi trường với số rắn đúng bằng số genome trong nhóm
     kwargs = dict(ENV_KWARGS)
     kwargs["num_snakes"] = num_snakes
+    
+    # Tắt print warning của Gym
     env, _, _, _ = make_snake(**kwargs)
 
     nets = [neat.nn.FeedForwardNetwork.create(g, config) for _, g in genome_group]
     fitness_acc = np.zeros(num_snakes, dtype=np.float32)
 
-    # Chạy nhiều Episode để lấy trung bình (Tránh may mắn)
     for _ in range(EPISODES_PER_EVAL):
         obs = env.reset()
-        # print("obs = ", obs.shape)
         if isinstance(obs, tuple): obs = obs[0]
             
         dones = [False] * num_snakes
         steps = 0
         epi_rewards = np.zeros(num_snakes, dtype=np.float32)
+        
+        # UPDATE: Bộ đếm đói (Starvation Counter)
+        starvation = np.zeros(num_snakes, dtype=int)
 
         while not all(dones) and steps < MAX_STEPS_PER_EPISODE:
             steps += 1
-            # print("steps = ", steps)
             actions = []
 
+            # 1. Dự đoán hành động
             for i in range(num_snakes):
                 if dones[i]:
-                    actions.append(0) # Action gì cũng được nếu đã chết
+                    actions.append(0)
                     continue
 
                 inp = obs_to_input_vector(obs[i])
                 out = nets[i].activate(inp)
-                
-                # Chọn action
                 act = int(np.argmax(out))
-                if not 0 <= act < env.action_space.n:
-                    act = 0 # Fallback an toàn
-                
+                if not 0 <= act < env.action_space.n: act = 0
                 actions.append(act)
 
+            # 2. Bước đi
             obs, rewards, new_dones, _ = env.step(actions)
-            # print("new_dones = ", new_dones)
-            
-            # Xử lý format dones/rewards
             if isinstance(new_dones, np.ndarray): new_dones = new_dones.tolist()
-            
-            # Cập nhật trạng thái chết
+
+            # 3. Xử lý logic
             for i in range(num_snakes):
-                if dones[i]: continue # Đã chết từ trước
-                dones[i] = new_dones[i]
+                if dones[i]: continue 
+                
+                # UPDATE: Logic Starvation
+                # Nếu ăn (reward > 1.0 vì reward ăn là +10.0)
+                if rewards[i] > 1.0:
+                    starvation[i] = 0 # Reset đói
+                else:
+                    starvation[i] += 1
+                
+                # Nếu đói quá lâu -> CHẾT
+                if starvation[i] > STARVATION_LIMIT:
+                    new_dones[i] = True     # Ép chết
+                    rewards[i] -= 5.0       # Phạt thêm vì lười
+                
+                # Cộng dồn reward
                 epi_rewards[i] += rewards[i]
+                
+                # Cập nhật trạng thái chết
+                if new_dones[i]:
+                    dones[i] = True
 
         fitness_acc += epi_rewards
 
     env.close()
 
-    # Tính Fitness trung bình
+    # Gán fitness
     avg_fitness = fitness_acc / float(EPISODES_PER_EVAL)
-
     for (gid, genome), fit in zip(genome_group, avg_fitness):
         genome.fitness = float(fit)
 
 def eval_genomes(genomes, config):
-    """Chia population thành các nhóm nhỏ để thi đấu."""
     idx = 0
     N = len(genomes)
-    
     while idx < N:
-        # Lấy nhóm tiếp theo
         group = genomes[idx : idx + MAX_SNAKES_PER_ENV]
-        
-        # Nếu nhóm cuối cùng quá ít người (ví dụ < 2), có thể skip hoặc chạy solo
-        # Ở đây marlenv hỗ trợ chạy 1 rắn, nên ta vẫn eval bình thường.
         if len(group) > 0:
             eval_group(group, config)
-            
         idx += MAX_SNAKES_PER_ENV
 
 def run_training():
     ensure_neat_config(CONFIG_PATH)
 
     config = neat.Config(
-        neat.DefaultGenome,
-        neat.DefaultReproduction,
-        neat.DefaultSpeciesSet,
-        neat.DefaultStagnation,
-        CONFIG_PATH,
+        neat.DefaultGenome, neat.DefaultReproduction,
+        neat.DefaultSpeciesSet, neat.DefaultStagnation,
+        CONFIG_PATH
     )
     
-    print(f"\n--- BẮT ĐẦU HUẤN LUYỆN ---")
+    print(f"\n--- BẮT ĐẦU HUẤN LUYỆN (Fix Loop) ---")
     print(f"Population: {config.pop_size}")
-    print(f"Generations: {GENERATIONS}")
-    print(f"Snakes per Env: {MAX_SNAKES_PER_ENV}")
+    print(f"Inputs: {INPUT_SIZE} (Added Vision)")
+    print(f"Starvation Limit: {STARVATION_LIMIT} steps")
     
     pop = neat.Population(config)
     pop.add_reporter(neat.StdOutReporter(True))
     pop.add_reporter(neat.StatisticsReporter())
-    pop.add_reporter(neat.Checkpointer(10, filename_prefix='neat-checkpoint-'))
-
+    
     # Train
     winner = pop.run(eval_genomes, n=GENERATIONS)
 
@@ -329,34 +337,34 @@ def run_training():
         pickle.dump(winner, f)
     print(f"Đã lưu winner tại: {WINNER_FILE}")
 
-    # Test ngay sau khi train
     test_winner_gui(winner, config)
 
 def test_winner_gui(genome, config):
-    """Xem winner thi đấu với các bản sao của chính nó."""
-    print("\n[GUI] Đang khởi động giả lập Replay...")
+    print("\n[GUI] Replay Winner (Cửa sổ GUI sẽ hiện lên)...")
     
     kwargs = dict(ENV_KWARGS)
-    # Test với đúng số lượng rắn như khi train
     kwargs["num_snakes"] = MAX_SNAKES_PER_ENV 
     
     env, _, _, props = make_snake(**kwargs)
-    env = RenderGUI(env, window_name="Snake NEAT Champion Replay")
+    try:
+        env = RenderGUI(env, window_name="Snake AI Replay")
+    except:
+        print("Không thể bật GUI (có thể do môi trường headless).")
+        env.close()
+        return
     
-    # Tạo mạng cho winner
     net = neat.nn.FeedForwardNetwork.create(genome, config)
     
-    # Loop vô tận để xem
     try:
         while True:
             obs = env.reset()
             if isinstance(obs, tuple): obs = obs[0]
             dones = [False] * props["num_snakes"]
-            total_rewards = np.zeros(props["num_snakes"])
+            starvation = np.zeros(props["num_snakes"], dtype=int)
             
             while not all(dones):
                 env.render()
-                time.sleep(0.05) # Làm chậm để dễ nhìn
+                time.sleep(0.05) 
                 
                 actions = []
                 for i in range(props["num_snakes"]):
@@ -366,43 +374,30 @@ def test_winner_gui(genome, config):
                     
                     inp = obs_to_input_vector(obs[i])
                     out = net.activate(inp)
-                    act = int(np.argmax(out))
-                    actions.append(act)
+                    actions.append(int(np.argmax(out)))
                 
                 obs, rewards, new_dones, _ = env.step(actions)
                 if isinstance(new_dones, np.ndarray): new_dones = new_dones.tolist()
                 
                 for i in range(props["num_snakes"]):
                     if not dones[i]:
+                        # Logic hiển thị starvation khi test
+                        if rewards[i] > 1.0: starvation[i] = 0
+                        else: starvation[i] += 1
+                        
+                        if starvation[i] > STARVATION_LIMIT:
+                            new_dones[i] = True
+                            print(f"Snake {i} chết đói!")
+
                         dones[i] = new_dones[i]
-                        total_rewards[i] += rewards[i]
             
-            print(f"Game Over. Rewards: {total_rewards}")
-            time.sleep(1) # Nghỉ 1s trước ván mới
+            print("Ván đấu kết thúc. Restarting...")
+            time.sleep(1)
             
     except KeyboardInterrupt:
         print("\nĐã tắt GUI.")
     finally:
         env.close()
 
-def load_and_play():
-    if not os.path.exists(WINNER_FILE):
-        print("Chưa có file winner. Hãy chạy train trước!")
-        return
-        
-    ensure_neat_config(CONFIG_PATH)
-    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         CONFIG_PATH)
-                         
-    with open(WINNER_FILE, 'rb') as f:
-        winner = pickle.load(f)
-        
-    test_winner_gui(winner, config)
-
 if __name__ == "__main__":
-    # Bỏ comment dòng dưới nếu muốn chỉ load file cũ
-    # load_and_play() 
-    
-    # Mặc định là Train mới
     run_training()
