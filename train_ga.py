@@ -31,10 +31,10 @@ WINNER_FILE = "winner_snake_genome.pkl"
 # Cấu hình môi trường & Training
 MAX_SNAKES_PER_ENV = 4      
 EPISODES_PER_EVAL = 3       
-MAX_STEPS_PER_EPISODE = 200 # Tăng bước tối đa lên chút
-GENERATIONS = 30           # Cần train lâu hơn vì bài toán khó hơn
+MAX_STEPS_PER_EPISODE = 512 # Tăng bước tối đa lên chút
+GENERATIONS = 50           # Cần train lâu hơn vì bài toán khó hơn
 INPUT_SIZE = 26             # UPDATE: 24 cảm biến + 2 hướng táo (dx, dy)
-STARVATION_LIMIT = 60       # UPDATE: Số bước tối đa cho phép nhịn đói
+STARVATION_LIMIT = 35       # UPDATE: Số bước tối đa cho phép nhịn đói
 
 ENV_KWARGS = dict(
     num_envs=1,
@@ -226,14 +226,32 @@ def obs_to_input_vector(obs_snake: np.ndarray):
 
     return np.array(input_vector, dtype=np.float32)
 
+# --- CẬP NHẬT HÀM HỖ TRỢ ĐỂ LẤY TỌA ĐỘ NHANH ---
+def get_positions(obs_snake):
+    """Trả về (y, x) của đầu rắn và quả táo."""
+    head_pos = np.where(obs_snake[:, :, 5] == 1)
+    fruit_pos = np.where(obs_snake[:, :, 1] == 1)
+    
+    head = None
+    fruit = None
+    
+    if len(head_pos[0]) > 0:
+        head = (head_pos[0][0], head_pos[1][0])
+    if len(fruit_pos[0]) > 0:
+        fruit = (fruit_pos[0][0], fruit_pos[1][0])
+        
+    return head, fruit
+
+def calculate_distance(p1, p2):
+    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1]) # Manhattan distance tốt cho grid
+
+# --- HÀM EVAL GROUP ĐÃ ĐƯỢC NÂNG CẤP ---
 def eval_group(genome_group, config):
     num_snakes = len(genome_group)
     kwargs = dict(ENV_KWARGS)
     kwargs["num_snakes"] = num_snakes
     
-    # Tắt print warning của Gym
     env, _, _, _ = make_snake(**kwargs)
-
     nets = [neat.nn.FeedForwardNetwork.create(g, config) for _, g in genome_group]
     fitness_acc = np.zeros(num_snakes, dtype=np.float32)
 
@@ -244,9 +262,18 @@ def eval_group(genome_group, config):
         dones = [False] * num_snakes
         steps = 0
         epi_rewards = np.zeros(num_snakes, dtype=np.float32)
-        
-        # UPDATE: Bộ đếm đói (Starvation Counter)
         starvation = np.zeros(num_snakes, dtype=int)
+        
+        # [NEW] Lưu lịch sử vị trí để phạt đi vòng tròn
+        # visited_positions[i] là một set chứa các tọa độ (y, x) gần đây
+        position_history = [[] for _ in range(num_snakes)] 
+
+        # [NEW] Tính khoảng cách ban đầu
+        prev_distances = [0] * num_snakes
+        for i in range(num_snakes):
+            head, fruit = get_positions(obs[i])
+            if head and fruit:
+                prev_distances[i] = calculate_distance(head, fruit)
 
         while not all(dones) and steps < MAX_STEPS_PER_EPISODE:
             steps += 1
@@ -268,26 +295,47 @@ def eval_group(genome_group, config):
             obs, rewards, new_dones, _ = env.step(actions)
             if isinstance(new_dones, np.ndarray): new_dones = new_dones.tolist()
 
-            # 3. Xử lý logic
+            # 3. Xử lý logic Reward Shaping
             for i in range(num_snakes):
                 if dones[i]: continue 
                 
-                # UPDATE: Logic Starvation
-                # Nếu ăn (reward > 1.0 vì reward ăn là +10.0)
-                if rewards[i] > 1.0:
-                    starvation[i] = 0 # Reset đói
+                # --- LOGIC MỚI: DISTANCE REWARD ---
+                head, fruit = get_positions(obs[i])
+                if head:
+                    # Check loop: Nếu vị trí này đã đi qua trong 10 bước gần nhất -> Phạt
+                    if head in position_history[i]:
+                        rewards[i] -= 2.0 # Phạt nặng vì đi lại đường cũ (quay vòng)
+                    
+                    # Cập nhật lịch sử (chỉ giữ 15 bước gần nhất)
+                    position_history[i].append(head)
+                    if len(position_history[i]) > 15:
+                        position_history[i].pop(0)
+
+                    if fruit:
+                        current_dist = calculate_distance(head, fruit)
+                        # Nếu khoảng cách giảm (lại gần hơn) -> Thưởng nhẹ
+                        if current_dist < prev_distances[i]:
+                            rewards[i] += 1.0 
+                        # Nếu khoảng cách tăng (đi xa ra) -> Phạt nhẹ
+                        else:
+                            rewards[i] -= 1.5 
+                        
+                        prev_distances[i] = current_dist
+                # ----------------------------------
+
+                # Logic Starvation cũ
+                if rewards[i] > 5.0: # (Ngưỡng 5.0 vì ăn táo dc +10, cộng dồn distance reward)
+                    starvation[i] = 0
+                    position_history[i] = [] # Reset lịch sử khi ăn được (để nó ko sợ đi lại chỗ cũ)
                 else:
                     starvation[i] += 1
                 
-                # Nếu đói quá lâu -> CHẾT
                 if starvation[i] > STARVATION_LIMIT:
-                    new_dones[i] = True     # Ép chết
-                    rewards[i] -= 5.0       # Phạt thêm vì lười
+                    new_dones[i] = True     
+                    rewards[i] -= 10.0 # Phạt chết đói nặng hơn
                 
-                # Cộng dồn reward
                 epi_rewards[i] += rewards[i]
                 
-                # Cập nhật trạng thái chết
                 if new_dones[i]:
                     dones[i] = True
 
@@ -295,11 +343,10 @@ def eval_group(genome_group, config):
 
     env.close()
 
-    # Gán fitness
     avg_fitness = fitness_acc / float(EPISODES_PER_EVAL)
     for (gid, genome), fit in zip(genome_group, avg_fitness):
         genome.fitness = float(fit)
-
+        
 def eval_genomes(genomes, config):
     idx = 0
     N = len(genomes)
