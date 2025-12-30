@@ -31,7 +31,7 @@ class Config:
     VISION_RANGE = None
    
     # Training
-    NUM_EPISODES = 50000
+    NUM_EPISODES = 5000
     MAX_STEPS_PER_EPISODE = 128
     BATCH_SIZE = 512
     GAMMA = 0.99
