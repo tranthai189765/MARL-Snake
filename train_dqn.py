@@ -32,8 +32,8 @@ class Config:
    
     # Training
     NUM_EPISODES = 5000
-    MAX_STEPS_PER_EPISODE = 128
-    BATCH_SIZE = 512
+    MAX_STEPS_PER_EPISODE = 512
+    BATCH_SIZE = 256
     GAMMA = 0.99
     LR = 5e-4
    
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
-    parser.add_argument("--episodes", type=int, default=50000)
+    parser.add_argument("--episodes", type=int, default=4500)
     parser.add_argument("--resume", type=int, default=None)
     parser.add_argument("--checkpoint", type=str, default="final")
     parser.add_argument("--no-render", action="store_true")
