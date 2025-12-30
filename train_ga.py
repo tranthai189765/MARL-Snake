@@ -45,11 +45,11 @@ ENV_KWARGS = dict(
     vision_range=None,
     # REWARD SHAPING (Đã tối ưu để trị bệnh đi vòng tròn)
     reward_dict= {
-        'fruit': +10.0,    # Thưởng lớn để kích thích ăn
-        'kill': +2.0,      # Thưởng nhỏ nếu giết được đối thủ (tùy chọn)
-        'lose': -5.0,      # Phạt vừa phải (đừng phạt quá nặng khiến nó sợ đi)
-        'win': +20.0,
-        'time': -0.1,      # Phạt thời gian nặng hơn để ép đi nhanh
+        'fruit': 10.0,
+        'kill': 0.0,
+        'lose': -20.0,
+        'win': 0.0,
+        'time': -0.1,
     },
 )
 
