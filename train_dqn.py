@@ -56,18 +56,20 @@ class Config:
     REWARD_DICT = {
         'fruit': 10.0,
         'kill': 0.0,
-        'lose': -20.0,
+        'lose': -25.0,
         'win': 0.0,
-        'time': -0.1,
+        'time': -0.03,
     }
+
    
     REWARD_DICT_LATE = {
         'fruit': 10.0,
         'kill': 0.0,
-        'lose': -20.0,
+        'lose': -25.0,
         'win': 0.0,
-        'time': -0.1,
+        'time': -0.03,
     }
+
    
     # Checkpoints & Logs
     SAVE_FREQ = 500        
