@@ -68,7 +68,7 @@ class Config:
         'lose': -50.0,
         'win': 0.0,
         'time': -0.03,
-    
+    }
 
    
     # Checkpoints & Logs
