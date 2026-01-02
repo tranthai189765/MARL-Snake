@@ -65,7 +65,7 @@ class Config:
     REWARD_DICT_LATE = {
         'fruit': 10.0,
         'kill': 0.0,
-        'lose': -100.0,
+        'lose': -50.0,
         'win': 0.0,
         'time': -0.1,
     }
