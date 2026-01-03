@@ -23,7 +23,7 @@ CONFIG_PATH = "config-neat-snake.ini"
 WINNER_FILE = "winner_snake_genome.pkl"
 MAX_SNAKES_PER_ENV = 2     # Train 1 con cho dễ hội tụ trước
 EPISODES_PER_EVAL = 5      
-MAX_STEPS_PER_EPISODE = 1000
+MAX_STEPS_PER_EPISODE = 512
 GENERATIONS = 50
 # UPDATE: 24 (Ray) + 2 (Táo) + 4 (Hướng đầu) = 30 Inputs
 INPUT_SIZE = 30           
@@ -56,7 +56,8 @@ reset_on_extinction    = False
 
 [DefaultGenome]
 num_inputs             = {INPUT_SIZE}
-num_outputs            = 0 
+num_outputs            = 4  
+# (0: Up, 1: Down, 2: Left, 3: Right) - KHÔNG ĐƯỢC ĐỂ = 0
 num_hidden             = 2
 num_layers             = 1
 initial_connection     = full_direct
@@ -130,11 +131,11 @@ survival_threshold   = 0.2
 def ensure_neat_config(path: str = CONFIG_PATH):
     with open(path, "w", encoding="utf-8") as f:
         f.write(DEFAULT_NEAT_CONFIG)
+    print("--> Đã cập nhật config: num_outputs = 4")
 
 def get_head_and_fruit(obs_snake):
-    """Lấy vị trí đầu rắn và táo"""
-    head_pos = np.where(obs_snake[:, :, 5] == 1) # Channel 5: My Head
-    fruit_pos = np.where(obs_snake[:, :, 1] == 1) # Channel 1: Fruit
+    head_pos = np.where(obs_snake[:, :, 5] == 1) 
+    fruit_pos = np.where(obs_snake[:, :, 1] == 1) 
     
     head = None
     fruit = None
@@ -145,12 +146,6 @@ def get_head_and_fruit(obs_snake):
     return head, fruit
 
 def obs_to_input_vector(obs_snake, last_action):
-    """
-    Input: 30 features
-    - 24 features Ray-casting (8 hướng x 3 loại vật thể)
-    - 2 features hướng táo (dx, dy)
-    - 4 features hướng di chuyển hiện tại (One-hot của last_action) -> RẤT QUAN TRỌNG
-    """
     H, W, C = obs_snake.shape
     head, fruit = get_head_and_fruit(obs_snake)
     
@@ -160,8 +155,7 @@ def obs_to_input_vector(obs_snake, last_action):
     center_y, center_x = head
     input_vector = []
 
-    # --- 1. RAY CASTING (Vision) ---
-    # 8 hướng: Bắc, Đông Bắc, Đông, Đông Nam, Nam, Tây Nam, Tây, Tây Bắc
+    # 1. RAY CASTING
     DIRECTIONS = [
         (-1, 0), (-1, 1), (0, 1), (1, 1), 
         (1, 0), (1, -1), (0, -1), (-1, -1)
@@ -172,33 +166,29 @@ def obs_to_input_vector(obs_snake, last_action):
         food_dist = 0
         body_dist = 0
         
-        # Quét tia
         dist = 0
         while True:
             dist += 1
             y, x = center_y + dy * dist, center_x + dx * dist
             
-            # Check Wall
+            # Check Out of bounds (Wall) or Wall Channel
             if not (0 <= y < H and 0 <= x < W) or obs_snake[y, x, 0] == 1:
                 if wall_dist == 0: wall_dist = dist
-                break # Gặp tường là dừng tia
+                break 
             
-            # Check Fruit
             if obs_snake[y, x, 1] == 1 and food_dist == 0:
                 food_dist = dist
                 
-            # Check Body/Obstacle (My Body, Other Head, Other Body, Other Tail)
             is_body = (obs_snake[y, x, 6] == 1 or obs_snake[y, x, 2] == 1 or 
                        obs_snake[y, x, 3] == 1 or obs_snake[y, x, 4] == 1)
             if is_body and body_dist == 0:
                 body_dist = dist
 
-        # Chuẩn hóa input về khoảng [0, 1] (Càng gần càng lớn)
         input_vector.append(1.0 / wall_dist if wall_dist > 0 else 0)
         input_vector.append(1.0 / food_dist if food_dist > 0 else 0)
         input_vector.append(1.0 / body_dist if body_dist > 0 else 0)
 
-    # --- 2. HƯỚNG TÁO (Global Direction) ---
+    # 2. HƯỚNG TÁO
     fruit_dx, fruit_dy = 0, 0
     if fruit:
         fruit_dy = (fruit[0] - center_y) / H
@@ -206,9 +196,7 @@ def obs_to_input_vector(obs_snake, last_action):
     input_vector.append(fruit_dy)
     input_vector.append(fruit_dx)
 
-    # --- 3. HƯỚNG DI CHUYỂN HIỆN TẠI (Quan trọng) ---
-    # One-hot encoding cho last_action (0: Up, 1: Down, 2: Left, 3: Right - tùy môi trường)
-    # Giả sử env mapping: 0, 1, 2, 3. Ta tạo mảng 4 phần tử.
+    # 3. LAST ACTION (One-hot)
     action_one_hot = [0.0] * 4
     if 0 <= last_action < 4:
         action_one_hot[last_action] = 1.0
@@ -217,26 +205,18 @@ def obs_to_input_vector(obs_snake, last_action):
     return np.array(input_vector)
 
 def is_safe_move(obs, action, head_pos):
-    """Kiểm tra xem action này có dẫn đến cái chết ngay lập tức không"""
     H, W, _ = obs.shape
     y, x = head_pos
-    
-    # Mapping action của marlenv (cần check lại mapping thực tế của lib)
-    # Thường là: 0: Still/Up, 1: Down, 2: Left, 3: Right (Ví dụ)
-    # Ở đây ta giả định mapping chuẩn: 0: Up, 1: Down, 2: Left, 3: Right
-    # Nếu marlenv dùng mapping khác, bạn cần print(env.action_space) để xem
     dy, dx = 0, 0
-    if action == 0: dy = -1 # Up
-    elif action == 1: dy = 1 # Down
-    elif action == 2: dx = -1 # Left
-    elif action == 3: dx = 1 # Right
+    if action == 0: dy = -1 
+    elif action == 1: dy = 1 
+    elif action == 2: dx = -1 
+    elif action == 3: dx = 1 
     
     ny, nx = y + dy, x + dx
     
-    # Check Wall
     if not (0 <= ny < H and 0 <= nx < W):
         return False
-    # Check Wall channel (0) & Body channel (6)
     if obs[ny, nx, 0] == 1 or obs[ny, nx, 6] == 1:
         return False
         
@@ -250,9 +230,7 @@ def eval_group(genome_group, config):
     env, _, _, _ = make_snake(**kwargs)
     nets = [neat.nn.FeedForwardNetwork.create(g, config) for _, g in genome_group]
     
-    # Theo dõi action cuối cùng của mỗi con rắn (Mặc định ban đầu là 0)
     last_actions = [random.randint(0, 3) for _ in range(num_snakes)] 
-    
     fitnesses = np.zeros(num_snakes)
     
     for _ in range(EPISODES_PER_EVAL):
@@ -262,8 +240,8 @@ def eval_group(genome_group, config):
         dones = [False] * num_snakes
         steps = 0
         
-        # Tracking để tính reward phạt loop
-        visited_pos = [set() for _ in range(num_snakes)]
+        # FIX: Dùng list để lưu history thay vì set (để pop đúng thứ tự)
+        visited_pos = [[] for _ in range(num_snakes)]
         steps_since_eat = [0] * num_snakes
         
         while not all(dones) and steps < MAX_STEPS_PER_EPISODE:
@@ -275,33 +253,27 @@ def eval_group(genome_group, config):
                     actions.append(0)
                     continue
                 
-                # Input vector mới có thêm last_action
                 inp = obs_to_input_vector(obs[i], last_actions[i])
                 out = nets[i].activate(inp)
                 
-                # Chọn action từ mạng
+                # --- CHỖ NÀY ĐÃ ĐƯỢC FIX VÌ num_outputs = 4 ---
                 suggested_action = int(np.argmax(out))
                 
-                # --- SAFETY MECHANISM (Cơ chế chống tự sát sớm) ---
-                # Trong giai đoạn đầu training, nếu mạng chọn nước đi chết
-                # ta có thể random 1 nước đi khác để giúp nó sống sót lâu hơn mà học
+                # --- SAFETY MECHANISM ---
                 head, _ = get_head_and_fruit(obs[i])
                 final_action = suggested_action
                 
                 if head and not is_safe_move(obs[i], suggested_action, head):
-                    # Phạt nặng vì định tự sát
                     fitnesses[i] -= 2.0 
-                    # Thử tìm hướng đi an toàn khác (Hard-code logic)
                     safe_candidates = []
                     for act in range(4):
                         if is_safe_move(obs[i], act, head):
                             safe_candidates.append(act)
-                    
                     if safe_candidates:
                         final_action = random.choice(safe_candidates)
                 
                 actions.append(final_action)
-                last_actions[i] = final_action # Cập nhật cho bước sau
+                last_actions[i] = final_action 
 
             # Step
             obs, rewards, new_dones, _ = env.step(actions)
@@ -310,36 +282,35 @@ def eval_group(genome_group, config):
             for i in range(num_snakes):
                 if dones[i]: continue
                 
-                # Reward cơ bản
                 fitnesses[i] += rewards[i]
                 
-                # Xử lý đói
-                if rewards[i] > 0.5: # Ăn được táo
+                # Logic đói / ăn
+                if rewards[i] > 1.0: 
                     steps_since_eat[i] = 0
-                    visited_pos[i].clear() # Reset loop check khi ăn được
-                    fitnesses[i] += 10.0   # Thưởng to
+                    visited_pos[i] = [] # Reset history khi ăn được
+                    fitnesses[i] += 10.0  
                 else:
                     steps_since_eat[i] += 1
                 
-                # Phạt chết đói
                 if steps_since_eat[i] > STARVATION_LIMIT:
                     new_dones[i] = True
                     fitnesses[i] -= 5.0
                 
-                # Phạt đi vòng tròn
+                # Logic phạt đi vòng tròn (Loop penalty)
                 head, fruit = get_head_and_fruit(obs[i])
                 if head:
                     if head in visited_pos[i]:
-                        fitnesses[i] -= 0.1 # Phạt nhẹ mỗi bước lặp lại
+                        fitnesses[i] -= 0.5 # Phạt nặng hơn chút nếu cứ đi lại chỗ cũ
                     else:
-                        visited_pos[i].add(head)
-                        # Giới hạn bộ nhớ vị trí
-                        if len(visited_pos[i]) > 20: visited_pos[i].pop()
+                        visited_pos[i].append(head)
+                        if len(visited_pos[i]) > 20: 
+                            visited_pos[i].pop(0) # Xóa phần tử cũ nhất (FIFO)
                         
-                    # Distance reward thông minh hơn
+                    # Distance reward
                     if fruit:
                         dist = abs(head[0]-fruit[0]) + abs(head[1]-fruit[1])
-                        fitnesses[i] += (1.0/dist) * 0.1 # Thưởng nhỏ nếu ở gần táo
+                        if dist > 0:
+                            fitnesses[i] += (1.0/dist) * 0.1
 
                 if new_dones[i]:
                     dones[i] = True
