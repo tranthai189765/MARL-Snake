@@ -32,8 +32,8 @@ class Config:
    
     # Training
     NUM_EPISODES = 5000
-    MAX_STEPS_PER_EPISODE = 256
-    BATCH_SIZE = 512
+    MAX_STEPS_PER_EPISODE = 512
+    BATCH_SIZE = 256
     GAMMA = 0.99
     LR = 5e-4
    
