@@ -24,7 +24,7 @@ from marlenv.marlenv.wrappers import make_snake, RenderGUI
 # ========================== CONFIG ==========================
 class Config:
     # Environment
-    NUM_SNAKES = 1
+    NUM_SNAKES = 4
     HEIGHT = 20
     WIDTH = 20
     SNAKE_LENGTH = 5
@@ -32,7 +32,7 @@ class Config:
    
     # Training
     NUM_EPISODES = 5000
-    MAX_STEPS_PER_EPISODE = 512
+    MAX_STEPS_PER_EPISODE = 256
     BATCH_SIZE = 512
     GAMMA = 0.99
     LR = 5e-4
