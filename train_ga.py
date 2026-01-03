@@ -21,7 +21,7 @@ except Exception:
 # --- CẤU HÌNH ---
 CONFIG_PATH = "config-neat-snake.ini"
 WINNER_FILE = "winner_snake_genome.pkl"
-MAX_SNAKES_PER_ENV = 1     # Train 1 con cho dễ hội tụ trước
+MAX_SNAKES_PER_ENV = 2     # Train 1 con cho dễ hội tụ trước
 EPISODES_PER_EVAL = 5      
 MAX_STEPS_PER_EPISODE = 1000
 GENERATIONS = 50
