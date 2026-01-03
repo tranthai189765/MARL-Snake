@@ -22,9 +22,9 @@ except Exception:
 CONFIG_PATH = "config-neat-snake.ini"
 WINNER_FILE = "winner_snake_genome.pkl"
 MAX_SNAKES_PER_ENV = 1     # Train 1 con cho dễ hội tụ trước
-EPISODES_PER_EVAL = 1      
+EPISODES_PER_EVAL = 5      
 MAX_STEPS_PER_EPISODE = 1000
-GENERATIONS = 100
+GENERATIONS = 50
 # UPDATE: 24 (Ray) + 2 (Táo) + 4 (Hướng đầu) = 30 Inputs
 INPUT_SIZE = 30           
 STARVATION_LIMIT = 200     # Cho phép đói lâu hơn chút để đi tìm đường
@@ -32,9 +32,9 @@ STARVATION_LIMIT = 200     # Cho phép đói lâu hơn chút để đi tìm đư
 ENV_KWARGS = dict(
     num_envs=1,
     num_snakes=MAX_SNAKES_PER_ENV, 
-    height=15, # Map nhỏ lại chút để dễ học lúc đầu
-    width=15,
-    snake_length=3,
+    height=20, # Map nhỏ lại chút để dễ học lúc đầu
+    width=20,
+    snake_length=5,
     vision_range=None,
     reward_dict= {
         'fruit': 10.0,
@@ -51,7 +51,7 @@ DEFAULT_NEAT_CONFIG = f"""\
 fitness_criterion      = max
 fitness_threshold      = 5000
 no_fitness_termination = True
-pop_size               = 100
+pop_size               = 350
 reset_on_extinction    = False
 
 [DefaultGenome]
