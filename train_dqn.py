@@ -24,7 +24,7 @@ from marlenv.marlenv.wrappers import make_snake, RenderGUI
 # ========================== CONFIG ==========================
 class Config:
     # Environment
-    NUM_SNAKES = 4
+    NUM_SNAKES = 1
     HEIGHT = 20
     WIDTH = 20
     SNAKE_LENGTH = 5
