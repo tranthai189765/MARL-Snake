@@ -35,7 +35,7 @@ class Config:
     MAX_STEPS_PER_EPISODE = 512
     BATCH_SIZE = 1024
     GAMMA = 0.99
-    LR = 5e-42
+    LR = 5e-4
    
     EPSILON_START = 1.0
     EPSILON_END = 0.05
