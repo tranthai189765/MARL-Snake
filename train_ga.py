@@ -56,7 +56,7 @@ reset_on_extinction    = False
 
 [DefaultGenome]
 num_inputs             = {INPUT_SIZE}
-num_outputs            = 4  
+num_outputs            = 3  
 # (0: Up, 1: Down, 2: Left, 3: Right) - KHÔNG ĐƯỢC ĐỂ = 0
 num_hidden             = 2
 num_layers             = 1
