@@ -26,7 +26,7 @@ EPISODES_PER_EVAL = 5
 MAX_STEPS_PER_EPISODE = 512
 GENERATIONS = 50
 # UPDATE: 24 (Ray) + 2 (Táo) + 4 (Hướng đầu) = 30 Inputs
-INPUT_SIZE = 30           
+INPUT_SIZE = 29           
 STARVATION_LIMIT = 200     # Cho phép đói lâu hơn chút để đi tìm đường
 
 ENV_KWARGS = dict(
