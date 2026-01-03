@@ -40,7 +40,7 @@ class Config:
     
     EPSILON_START = 1.0
     EPSILON_END = 0.05
-    EPSILON_DECAY = 0.9995
+    EPSILON_DECAY = 0.995
     
     # Replay Buffer
     BUFFER_SIZE = 10000              
@@ -55,19 +55,19 @@ class Config:
     EARLY_DEATH_PENALTY = -1.0
     
     REWARD_DICT = {
-        'fruit': 1.0,
+        'fruit': 10.0,
         'kill': 0.0,
-        'lose': -7.0,
+        'lose': -70.0,
         'win': 0.0,
-        'time': -0.003,
+        'time': -0.03,
     }
 
     REWARD_DICT_LATE = {
-        'fruit': 1.0,
+        'fruit': 10.0,
         'kill': 0.0,
-        'lose': -7.0,
+        'lose': -70.0,
         'win': 0.0,
-        'time': -0.003,
+        'time': -0.03,
     }
     
     # Checkpoints & Logs
