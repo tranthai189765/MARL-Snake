@@ -269,9 +269,14 @@ class Trainer:
                     else:
                         act = agent.select_action(obs[i], self.policy_net, self.epsilon, self.config.DEVICE)
                         actions.append(act)
-                print("actions = ", actions)
-                next_obs, rewards, next_dones, info = self.env.step(actions)
-               
+
+                if self.config.NUM_SNAKES == 1:
+                    action_to_step = actions[0] 
+                else:
+                    action_to_step = actions
+                
+                next_obs, rewards, next_dones, info = self.env.step(action_to_step)
+             
                 # Store transitions
                 for i in range(self.config.NUM_SNAKES):
                     if not dones[i]: # Nếu agent chưa chết trước đó
