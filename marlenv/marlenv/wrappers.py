@@ -18,22 +18,69 @@ class AsyncState(Enum):
     WAITING_RENDER = 'render'
  
 class RenderGUI(gym.Wrapper):
-    def __init__(self, env, window_name="Snake"):
+    def __init__(
+        self,
+        env,
+        window_name="Snake AI",
+        save_video=False,
+        video_path="output.mp4",
+        fps=20
+    ):
         super().__init__(env)
         self.window_name = window_name
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        self.render_size = 30
+        self.window_initialized = False
 
-    def render(self, mode='human', **kwargs):
-        img = self.env.render(mode='rgb_array')  # lấy mảng hình
-        if img is not None:
-            cv2.imshow(self.window_name, img)
-            cv2.waitKey(1)  # 1ms delay để hiển thị
-        return img
+        # ---- VIDEO ----
+        self.save_video = save_video
+        self.video_path = video_path
+        self.fps = fps
+        self.video_writer = None
+
+    def render(self):
+        img_rgb = self.env.render_fancy(cell_size=self.render_size)
+        if img_rgb is None:
+            return None
+
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+
+        # ---- INIT WINDOW ----
+        if not self.window_initialized:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(
+                self.window_name,
+                img_bgr.shape[1],
+                img_bgr.shape[0]
+            )
+            self.window_initialized = True
+
+        cv2.imshow(self.window_name, img_bgr)
+        cv2.waitKey(1)
+
+        # ---- INIT VIDEO WRITER ----
+        if self.save_video and self.video_writer is None:
+            h, w, _ = img_bgr.shape
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self.video_writer = cv2.VideoWriter(
+                self.video_path,
+                fourcc,
+                self.fps,
+                (w, h)
+            )
+
+        # ---- WRITE FRAME ----
+        if self.save_video and self.video_writer is not None:
+            self.video_writer.write(img_bgr)
+
+        return img_rgb
 
     def close(self):
+        if self.video_writer is not None:
+            self.video_writer.release()
+        if self.window_initialized:
+            cv2.destroyWindow(self.window_name)
         super().close()
-        cv2.destroyAllWindows()
- 
+        
 class SingleAgent(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)

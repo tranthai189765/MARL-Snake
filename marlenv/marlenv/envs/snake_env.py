@@ -15,7 +15,18 @@ from marlenv.core.grid_util import (
     rgb_from_grid, image_from_grid)
 from marlenv.core.snake import Direction, Snake, Cell, CellColors
 from marlenv.envs.constants import FEATURE_CHANNEL, RGB_CHANNEL
+from PIL import Image, ImageDraw
 
+COLOR_BG = (40, 44, 52)      # Màu nền tối
+COLOR_WALL = (80, 80, 80)    # Màu tường
+COLOR_FRUIT = (230, 70, 70)  # Màu quả táo (Đỏ)
+# Màu cho từng con rắn (xanh lá, xanh dương, tím, vàng...)
+SNAKE_COLORS = [
+    (80, 200, 120),  # Emerald Green
+    (80, 160, 240),  # Sky Blue
+    (200, 100, 240), # Purple
+    (240, 200, 80)   # Yellow
+]
 
 class SnakeEnv(gym.Env):
     default_action_dict = {
@@ -33,12 +44,13 @@ class SnakeEnv(gym.Env):
     }
 
     default_reward_dict = {
-        'fruit': 1.0,
-        'kill': 0.,
-        'lose': 0.0,
-        'win': 0.,
-        'time': 0.,
+        'fruit': 10.0,
+        'kill': 0.0,
+        'lose': -0.5,
+        'win': 0.0,
+        'time': -0.001,
     }
+    
     reward_keys = default_reward_dict.keys()
 
     max_episode_steps = 1e4
@@ -149,6 +161,108 @@ class SnakeEnv(gym.Env):
     def seed(self, seed=42):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+    
+    def render_fancy(self, cell_size=40, save_path=None):
+        """
+        Render đẹp hơn với độ phân giải cao và đầu rắn hình tròn có mắt.
+        cell_size: Kích thước pixel của một ô lưới (tăng lên để nét hơn)
+        """
+        h, w = self.grid_shape
+        img_w, img_h = w * cell_size, h * cell_size
+        
+        # Tạo ảnh nền
+        image = Image.new("RGB", (img_w, img_h), COLOR_BG)
+        draw = ImageDraw.Draw(image)
+
+        # 1. Vẽ Tường và Quả
+        for r in range(h):
+            for c in range(w):
+                val = self.grid[r, c]
+                x, y = c * cell_size, r * cell_size
+                
+                # Vẽ Tường
+                if val == Cell.WALL.value:
+                    draw.rectangle([x, y, x + cell_size, y + cell_size], fill=COLOR_WALL)
+                
+                # Vẽ Quả (Hình tròn đỏ)
+                elif val == Cell.FRUIT.value:
+                    padding = cell_size * 0.2
+                    draw.ellipse([x + padding, y + padding, 
+                                  x + cell_size - padding, y + cell_size - padding], 
+                                 fill=COLOR_FRUIT)
+
+        # 2. Vẽ Rắn
+        for snake in self.snakes:
+            if not snake.alive: continue # Bỏ qua rắn chết (hoặc vẽ màu xám tuỳ bạn)
+
+            color = SNAKE_COLORS[snake.idx % len(SNAKE_COLORS)]
+            
+            # --- Vẽ Thân (Hình vuông bo tròn hoặc nối liền) ---
+            # Để đơn giản ta vẽ các hình tròn nối tiếp nhau cho mượt
+            for coord in snake.coords:
+                r, c = coord
+                x, y = c * cell_size, r * cell_size
+                # Vẽ thân hơi nhỏ hơn ô một chút để tách biệt hoặc full ô
+                draw.rectangle([x, y, x + cell_size, y + cell_size], fill=color)
+
+            # --- Vẽ Đầu (Hình tròn đè lên vị trí đầu) ---
+            head_r, head_c = snake.head_coord
+            hx, hy = head_c * cell_size, head_r * cell_size
+
+            # LẤY GIÁ TRỊ TỪ ENUM DIRECTION
+            direction_tuple = snake.direction.value  # Giả sử trả về (dy, dx)
+            dy, dx = direction_tuple[0], direction_tuple[1]
+            
+            # Vẽ hình tròn đầu
+            draw.ellipse([hx, hy, hx + cell_size, hy + cell_size], fill=color)
+
+            # --- Vẽ Mắt (Để xác định hướng) ---
+            # Xác định vị trí mắt dựa trên hướng di chuyển (snake.direction)
+            # snake.direction là vector (dy, dx). Ví dụ: UP=(-1, 0), RIGHT=(0, 1)
+            
+            # Kích thước mắt
+            eye_radius = cell_size * 0.1
+            eye_color = (255, 255, 255) # Trắng
+            pupil_color = (0, 0, 0)     # Đen
+
+            # Tính tâm đầu rắn
+            cx, cy = hx + cell_size / 2, hy + cell_size / 2
+            
+            # Độ lệch của mắt so với tâm
+            offset_front = cell_size * 0.3  # Đẩy mắt về phía trước
+            offset_side = cell_size * 0.15  # Đẩy mắt sang hai bên
+            
+            # Tính toạ độ 2 mắt
+            # Logic: Xoay toạ độ dựa trên vector hướng
+            # Nếu đi ngang (dx!=0), offset_front theo X, offset_side theo Y
+            # Nếu đi dọc (dy!=0), offset_front theo Y, offset_side theo X
+            
+            eye_1_x = cx + (dx * offset_front) - (dy * offset_side)
+            eye_1_y = cy + (dy * offset_front) - (dx * offset_side)
+            
+            eye_2_x = cx + (dx * offset_front) + (dy * offset_side)
+            eye_2_y = cy + (dy * offset_front) + (dx * offset_side)
+
+            # Vẽ mắt trắng
+            draw.ellipse([eye_1_x - eye_radius, eye_1_y - eye_radius, 
+                          eye_1_x + eye_radius, eye_1_y + eye_radius], fill=eye_color)
+            draw.ellipse([eye_2_x - eye_radius, eye_2_y - eye_radius, 
+                          eye_2_x + eye_radius, eye_2_y + eye_radius], fill=eye_color)
+            
+            # Vẽ con ngươi đen (nhỏ hơn)
+            pupil_r = eye_radius * 0.5
+            draw.ellipse([eye_1_x - pupil_r, eye_1_y - pupil_r, 
+                          eye_1_x + pupil_r, eye_1_y + pupil_r], fill=pupil_color)
+            draw.ellipse([eye_2_x - pupil_r, eye_2_y - pupil_r, 
+                          eye_2_x + pupil_r, eye_2_y + pupil_r], fill=pupil_color)
+
+        # Lưu hoặc trả về array
+        if save_path:
+            image.save(save_path)
+            print(f"Saved fancy render to {save_path}")
+        
+        # Để tương thích với gym (trả về numpy array)
+        return np.array(image)
 
     def render(self, mode='ascii'):
         if mode == 'ascii':
