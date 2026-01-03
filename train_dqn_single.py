@@ -269,7 +269,7 @@ class Trainer:
                     else:
                         act = agent.select_action(obs[i], self.policy_net, self.epsilon, self.config.DEVICE)
                         actions.append(act)
-               
+                print("actions = ", actions)
                 next_obs, rewards, next_dones, info = self.env.step(actions)
                
                 # Store transitions
