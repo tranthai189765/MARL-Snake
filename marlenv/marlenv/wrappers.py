@@ -211,8 +211,8 @@ def make_snake(num_envs=1, num_snakes=4, env_id="Snake-v1", **kwargs):
     if num_envs > 1:
         env = AsyncVectorEnv([make_env for _ in range(num_envs)])
     else:
-        env = AsyncVectorEnv([make_env for _ in range(num_envs)])
-        # env = make_env()
+        # env = AsyncVectorEnv([make_env for _ in range(num_envs)])
+        env = make_env()
  
     dummy = make_env()
     properties = {
