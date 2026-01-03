@@ -105,7 +105,7 @@ class ReplayBuffer:
 class DQN(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(DQN, self).__init__()
-        num_envs, h, w, c = input_shape
+        h, w, c = input_shape
        
         self.conv1 = nn.Conv2d(c, 32, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
