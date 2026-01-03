@@ -277,6 +277,14 @@ class Trainer:
                 
                 next_obs, rewards, next_dones, info = self.env.step(action_to_step)
              
+                if self.config.NUM_SNAKES == 1:
+                    if not isinstance(next_obs, (list, np.ndarray)):
+                        next_obs = [next_obs]
+                    if not isinstance(rewards, (list, np.ndarray)):
+                        rewards = [rewards]
+                    if not isinstance(next_dones, (list, np.ndarray)):
+                        next_dones = [next_dones]
+     
                 # Store transitions
                 for i in range(self.config.NUM_SNAKES):
                     if not dones[i]: # Nếu agent chưa chết trước đó
