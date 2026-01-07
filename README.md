@@ -1,5 +1,7 @@
 # Hướng dẫn cài đặt môi trường MARL-Snake
 
+<img width="599" height="591" alt="snake_img (2)" src="https://github.com/user-attachments/assets/7a2cfd3c-99d9-4ea7-b018-781d33cb0780" />
+
 **1. Clone repository**
 ```
 git clone https://github.com/tranthai189765/MARL-Snake.git
