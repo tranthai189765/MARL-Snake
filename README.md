@@ -34,13 +34,6 @@ pip uninstall marlenv
 
 Sau đó làm lại các bước 2 → 4 ở trên.
 
-**Lưu ý**
-
-Phần render sẽ được Thái cập nhật để hiển thị đẹp và trực quan hơn trong thời gian tới nhé. 
-
-**Có vấn đề gì nhắn Thái nhé mng!**
-
-
 # Luật chơi (Rules)
 
 Nhiều rắn (snakes) sẽ chiến đấu trên một bản đồ dạng lưới có kích thước cố định.
@@ -129,11 +122,5 @@ env = gym.make('snake-v1', reward_func=custom_reward_func)
 
 Mỗi phần thưởng có thể là số thực dương hoặc âm, tùy ý người dùng.
 
-
-
-
-**Render hiện tại:**
-
-<img width="619" height="677" alt="image" src="https://github.com/user-attachments/assets/24cb4833-27b2-4b07-bd41-8cec943e6f7f" />
 
 
