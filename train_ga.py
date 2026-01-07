@@ -1,266 +1,509 @@
+"""
+Hybrid NEAT-DQN Training for MARL-Snake
+======================================
+Strategy:
+1. Load pre-trained DQN checkpoint.
+2. Freeze DQN weights (Conv + FC layers) to use as Feature Extractor.
+3. Use NEAT to evolve the decision head (Input: 128 features from DQN -> Output: 3 Actions).
+4. Save "Best Agent" as a combined checkpoint (DQN State + NEAT Genome).
+
+IMPORTANT LOGIC CHANGE (as requested):
+- The DQN fc3 head is converted into an equivalent NEAT genome and is treated as the INITIAL WINNER.
+- This winner is saved immediately to RESULT_FILENAME.
+- During NEAT evolution, if a genome achieves higher fitness, it overwrites the saved file.
+- NO baseline_fitness field is stored.
+- Rendering / inference code is moved to a SEPARATE script (not included here).
+"""
+
 import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 import neat
 import pickle
-import math
-import sys
-import time
-import random
+from marlenv.marlenv.wrappers import make_snake
 
-# --- XỬ LÝ IMPORT ---
-try:
-    import gymnasium as gym
-except ImportError:
-    import gym
+# ================= CONFIGURATION =================
+CHECKPOINT_DQN_PATH = "checkpoints/shared_model_15500.pth"
+NEAT_CONFIG_FILENAME = "config-neat-hybrid.ini"
+RESULT_FILENAME = "hybrid_neat_best.pkl"
 
-try:
-    from marlenv.marlenv.wrappers import make_snake, RenderGUI
-except Exception:
-    pass
+NUM_GENERATIONS = 50
+NUM_SNAKES = 4
+HEIGHT = 20
+WIDTH = 20
+SNAKE_LENGTH = 5
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+REWARD_DICT = {
+    'fruit': 1.0,     # Rất cao: Khuyến khích ăn mồi tối đa
+    'kill': 0.0,      # Không thưởng: Không khuyến khích đánh nhau
+    'lose': 0.0,     # Phạt nặng khi chết
+    'win': 0.0,
+    'time': 0.0,     # Phạt nhẹ: Để nó thong thả tìm mồi
+}
+def save_checkpoint_safe(data, filename):
+    """Lưu vào file tạm trước, sau đó rename để tránh lỗi corrupt khi tắt ngang."""
+    temp_filename = filename + ".tmp"
+    try:
+        with open(temp_filename, 'wb') as f:
+            pickle.dump(data, f)
+        # Lệnh này là nguyên tử (atomic) trên POSIX, và an toàn trên Windows (Python 3.3+)
+        if os.path.exists(filename):
+            os.remove(filename) # Cần thiết trên một số bản Windows cũ
+        os.replace(temp_filename, filename)
+        print(f"Saved checkpoint safe to {filename}")
+    except Exception as e:
+        print(f"Error saving checkpoint: {e}")
 
-# --- CẤU HÌNH ---
-CONFIG_PATH = "config-neat-snake.ini"
-WINNER_FILE = "winner_snake_genome.pkl"
-MAX_SNAKES_PER_ENV = 2     # Train 1 con cho dễ hội tụ trước
-EPISODES_PER_EVAL = 5      
-MAX_STEPS_PER_EPISODE = 512
-GENERATIONS = 50
-# UPDATE: 24 (Ray) + 2 (Táo) + 4 (Hướng đầu) = 30 Inputs
-INPUT_SIZE = 29           
-STARVATION_LIMIT = 200     # Cho phép đói lâu hơn chút để đi tìm đường
+# ================= DQN MODEL =================
+class DQN(nn.Module):
+    def __init__(self, input_shape, num_actions):
+        super(DQN, self).__init__()
+        num_envs, h, w, c = input_shape
+       
+        self.conv1 = nn.Conv2d(c, 32, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+       
+        conv_out_size = h * w * 64
+       
+        self.fc1 = nn.Linear(conv_out_size, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, num_actions)
+       
+    def forward_features(self, x):
+        if x.dim() == 3:
+            x = x.unsqueeze(0)
+        x = x.permute(0, 3, 1, 2).float()
+        x = x / 255.0 if x.max() > 1.0 else x
+       
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+       
+        x = x.reshape(x.size(0), -1)
+       
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        # x = self.fc3(x)
+        return x
 
-ENV_KWARGS = dict(
-    num_envs=1,
-    num_snakes=MAX_SNAKES_PER_ENV, 
-    height=20, # Map nhỏ lại chút để dễ học lúc đầu
-    width=20,
-    snake_length=5,
-    vision_range=None,
-    reward_dict= {
-        'fruit': 10.0,
-        'kill': 0.0,
-        'lose': -30.0, # Phạt nhẹ thôi
-        'win': 0.0,
-        'time': -0.03,  # Bỏ phạt thời gian để tránh nó tự sát
-    },
-)
 
-# --- FIX LỖI CONFIG NEAT ---
-DEFAULT_NEAT_CONFIG = f"""\
+# ================= FEATURE EXTRACTOR =================
+class FeatureExtractor:
+    def __init__(self, ckpt_path, obs_shape):
+        self.model = DQN(obs_shape, 3).to(DEVICE)
+        ckpt = torch.load(
+            ckpt_path,
+            map_location=DEVICE,
+            weights_only=False   # <<< FIX PYTORCH 2.6+
+        )
+        state = ckpt['policy_net'] if 'policy_net' in ckpt else ckpt
+        self.model.load_state_dict(state)
+        self.model.eval()
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+    def embed(self, obs):
+        with torch.no_grad():
+            obs = torch.from_numpy(obs).to(DEVICE)
+            return self.model.forward_features(obs).cpu().numpy()
+
+
+# ================= NEAT CONFIG =================
+def create_neat_config():
+    with open(NEAT_CONFIG_FILENAME, 'w') as f:
+        f.write("""
 [NEAT]
-fitness_criterion      = max
-fitness_threshold      = 1e9
-no_fitness_termination = True
-pop_size               = 350 
-reset_on_extinction    = False
-
+fitness_criterion = max
+fitness_threshold = 1e9
+pop_size = 100
+reset_on_extinction = False
+no_fitness_termination = False
 [DefaultGenome]
-num_inputs             = {INPUT_SIZE}
-num_outputs            = 3  
-# (0: Up, 1: Down, 2: Left, 3: Right) - KHÔNG ĐƯỢC ĐỂ = 0
-num_hidden             = 2
+# Node activation options
+activation_default = relu
+activation_mutate_rate = 0.1
+activation_options = relu sigmoid tanh
+# Node aggregation options
+aggregation_default = sum
+aggregation_mutate_rate = 0.0
+aggregation_options = sum
+# Node bias options
+bias_init_type = gaussian
+bias_init_mean = 0.0
+bias_init_stdev = 1.0
+bias_max_value = 3.0
+bias_min_value = -3.0
+bias_mutate_power = 0.5
+bias_mutate_rate = 0.7
+bias_replace_rate = 0.1
+# Genome compatibility options
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient = 0.5
+single_structural_mutation = false
+structural_mutation_surer = default
+# Connection add/remove rates
+conn_add_prob = 0.5
+conn_delete_prob = 0.2
+# Connection enable options
+enabled_default = True
+enabled_mutate_rate = 0.01
+# Feedforward network options
+feed_forward = True
+# Node add/remove rates
+node_add_prob = 0.2
+node_delete_prob = 0.2
+# Network parameters
+num_inputs             = 128
+num_outputs            = 3
+num_hidden             = 0
 num_layers             = 1
 initial_connection     = full_direct
 
-feed_forward           = True
-compatibility_disjoint_coefficient = 1.0
-compatibility_weight_coefficient   = 0.5
-single_structural_mutation = false
-structural_mutation_surer = default
-
-activation_default     = tanh
-activation_mutate_rate = 0.05
-activation_options     = tanh relu sigmoid
-
-aggregation_default    = sum
-aggregation_mutate_rate = 0.0
-aggregation_options    = sum
-
-bias_init_type = gaussian
-bias_init_mean         = 0.0
-bias_init_stdev        = 1.0
-bias_max_value         = 3.0
-bias_min_value         = -3.0
-bias_mutate_power      = 0.5
-bias_mutate_rate       = 0.7
-bias_replace_rate      = 0.1
-
+# Node response options
 response_init_type = gaussian
-response_init_mean     = 1.0
-response_init_stdev    = 0.0
-response_max_value     = 3.0
-response_min_value     = -3.0
-response_mutate_power  = 0.0
-response_mutate_rate   = 0.0
-response_replace_rate  = 0.0
-
+response_init_mean = 1.0
+response_init_stdev = 0.0
+response_max_value = 3.0
+response_min_value = -3.0
+response_mutate_power = 0.0
+response_mutate_rate = 0.0
+response_replace_rate = 0.0
+# Connection weight options
 weight_init_type = gaussian
-weight_init_mean       = 0.0
-weight_init_stdev      = 1.0
-weight_max_value       = 3.0
-weight_min_value       = -3.0
-weight_mutate_power    = 0.5
-weight_mutate_rate     = 0.8
-weight_replace_rate    = 0.1
-
+weight_init_mean = 0.0
+weight_init_stdev = 1.0
+weight_max_value = 3
+weight_min_value = -3
+weight_mutate_power = 0.5
+weight_mutate_rate = 0.8
+weight_replace_rate = 0.1
 enabled_rate_to_true_add = 0.0
 enabled_rate_to_false_add = 0.0
-enabled_default        = True
-enabled_mutate_rate    = 0.01
-
-# === Mutation probabilities ===
-conn_add_prob           = 0.5
-conn_delete_prob        = 0.2
-node_add_prob           = 0.3
-node_delete_prob        = 0.1
-
 [DefaultSpeciesSet]
-compatibility_threshold = 3.0 
-
+compatibility_threshold = 2.0
 [DefaultStagnation]
 species_fitness_func = max
-max_stagnation       = 20
-species_elitism      = 2
-
+max_stagnation = 15
+species_elitism = 1
 [DefaultReproduction]
-min_species_size = 1
-elitism              = 2
-survival_threshold   = 0.2
-"""
+min_species_size = 3
+elitism = 1
+survival_threshold = 0.2
+    """)
 
-def ensure_neat_config():
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        f.write(DEFAULT_NEAT_CONFIG)
-    print(f"--> Config updated: Inputs={INPUT_SIZE}, Outputs=3")
 
-def get_head_and_fruit(obs_snake):
-    head_pos = np.where(obs_snake[:, :, 5] == 1) 
-    fruit_pos = np.where(obs_snake[:, :, 1] == 1) 
-    head = (head_pos[0][0], head_pos[1][0]) if len(head_pos[0]) > 0 else None
-    fruit = (fruit_pos[0][0], fruit_pos[1][0]) if len(fruit_pos[0]) > 0 else None
-    return head, fruit
+# ================= DQN → NEAT GENOME =================
+def fc3_to_genome(fc3, config):
+    """Convert DQN fc3 layer into a NEAT genome (linear head)."""
+    genome = neat.DefaultGenome(0)
+    genome.configure_new(config.genome_config)
 
-def obs_to_input_vector(obs_snake, last_action):
-    H, W, C = obs_snake.shape
-    head, fruit = get_head_and_fruit(obs_snake)
-    if head is None: return np.zeros(INPUT_SIZE)
-    
-    center_y, center_x = head
-    input_vector = []
+    W = fc3.weight.detach().cpu().numpy()  # (3,128)
+    b = fc3.bias.detach().cpu().numpy()    # (3,)
 
-    # 1. RAY CASTING (24 features)
-    DIRECTIONS = [(-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)]
-    for dy, dx in DIRECTIONS:
-        wall_dist, food_dist, body_dist = 0, 0, 0
-        dist = 0
-        while True:
-            dist += 1
-            y, x = center_y + dy * dist, center_x + dx * dist
-            if not (0 <= y < H and 0 <= x < W) or obs_snake[y, x, 0] == 1:
-                if wall_dist == 0: wall_dist = dist
-                break 
-            if obs_snake[y, x, 1] == 1 and food_dist == 0: food_dist = dist
-            is_body = (obs_snake[y, x, 6] == 1 or obs_snake[y, x, 2] == 1)
-            if is_body and body_dist == 0: body_dist = dist
+    for o in range(3):
+        out_node = config.genome_config.output_keys[o]
+        genome.nodes[out_node].bias = float(b[o])
+        for i in range(128):
+            in_node = config.genome_config.input_keys[i]
+            key = (in_node, out_node)
+            genome.connections[key].weight = float(W[o, i])
 
-        input_vector.append(1.0 / wall_dist if wall_dist > 0 else 0)
-        input_vector.append(1.0 / food_dist if food_dist > 0 else 0)
-        input_vector.append(1.0 / body_dist if body_dist > 0 else 0)
+    return genome
 
-    # 2. HƯỚNG TÁO (2 features)
-    f_dy = (fruit[0] - center_y) / H if fruit else 0
-    f_dx = (fruit[1] - center_x) / W if fruit else 0
-    input_vector.extend([f_dy, f_dx])
 
-    # 3. LAST ACTION (3 features - Sửa từ 4 về 3 để khớp 29 inputs)
-    action_one_hot = [0.0] * 3
-    if 0 <= last_action < 3:
-        action_one_hot[last_action] = 1.0
-    input_vector.extend(action_one_hot)
+# ================= FITNESS =================
+extractor = None
+env = None
+best_fitness = -1e9
 
-    return np.array(input_vector)
-
-# 
-
-def eval_group(genome_group, config):
-    num_snakes = len(genome_group)
-    kwargs = dict(ENV_KWARGS)
-    kwargs["num_snakes"] = num_snakes
-    
-    env, _, _, _ = make_snake(**kwargs)
-    nets = [neat.nn.FeedForwardNetwork.create(g, config) for _, g in genome_group]
-    
-    last_actions = [1] * num_snakes # 1 = Straight
-    fitnesses = np.zeros(num_snakes)
-    
-    for _ in range(EPISODES_PER_EVAL):
-        obs = env.reset()
-        if isinstance(obs, tuple): obs = obs[0]
-        dones = [False] * num_snakes
-        steps = 0
-        visited_pos = [[] for _ in range(num_snakes)]
-        steps_since_eat = [0] * num_snakes
-        
-        while not all(dones) and steps < MAX_STEPS_PER_EPISODE:
-            steps += 1
-            actions = []
-            for i in range(num_snakes):
-                if dones[i]:
-                    actions.append(1)
-                    continue
-                
-                inp = obs_to_input_vector(obs[i], last_actions[i])
-                out = nets[i].activate(inp)
-                suggested_action = int(np.argmax(out)) # Luôn là 0, 1, hoặc 2
-                
-                actions.append(suggested_action)
-                last_actions[i] = suggested_action
-
-            obs, rewards, new_dones, _ = env.step(actions)
-            if isinstance(new_dones, np.ndarray): new_dones = new_dones.tolist()
-            
-            for i in range(num_snakes):
-                if dones[i]: continue
-                fitnesses[i] += rewards[i]
-                if rewards[i] > 1.0:
-                    steps_since_eat[i] = 0
-                    visited_pos[i] = []
-                    fitnesses[i] += 5.0
-                else:
-                    steps_since_eat[i] += 1
-                
-                if steps_since_eat[i] > STARVATION_LIMIT:
-                    new_dones[i] = True
-                    fitnesses[i] -= 2.0
-
-                head, fruit = get_head_and_fruit(obs[i])
-                if head:
-                    if head in visited_pos[i]: fitnesses[i] -= 0.2
-                    else:
-                        visited_pos[i].append(head)
-                        if len(visited_pos[i]) > 15: visited_pos[i].pop(0)
-                
-                if new_dones[i]: dones[i] = True
-                    
-    env.close()
-    for i, (gid, genome) in enumerate(genome_group):
-        genome.fitness = fitnesses[i] / EPISODES_PER_EVAL
-
-def run_training():
-    ensure_neat_config()
-    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         CONFIG_PATH)
-    pop = neat.Population(config)
-    pop.add_reporter(neat.StdOutReporter(True))
-    pop.run(eval_genomes, n=GENERATIONS)
 
 def eval_genomes(genomes, config):
-    idx = 0
-    while idx < len(genomes):
-        group = genomes[idx : idx + MAX_SNAKES_PER_ENV]
-        eval_group(group, config)
-        idx += MAX_SNAKES_PER_ENV
+    global best_fitness
+    for gid, genome in genomes:
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        obs = env.reset()
+        done = [False] * NUM_SNAKES
+        R = np.zeros(NUM_SNAKES)
 
-if __name__ == "__main__":
-    run_training()
+        for _ in range(512):
+            emb = extractor.embed(obs)
+            acts = []
+            for i in range(NUM_SNAKES):
+                acts.append(0 if done[i] else int(np.argmax(net.activate(emb[i]))))
+            obs, rew, done, _ = env.step(acts)
+            R += rew
+            if all(done): break
+
+        genome.fitness = float(R.mean())
+
+        if genome.fitness > best_fitness:
+            best_fitness = genome.fitness
+            # with open(RESULT_FILENAME, 'wb') as f:
+            #     pickle.dump({
+            #         'dqn_state_dict': extractor.model.state_dict(),
+            #         'neat_genome': genome,
+            #         'neat_config': config
+            #     }, f)
+            # --- CODE MỚI (THÊM VÀO) ---
+            save_data = {
+                'dqn_state_dict': extractor.model.state_dict(),
+                'neat_genome': genome,
+                'neat_config': config
+            }
+            save_checkpoint_safe(save_data, RESULT_FILENAME)
+
+# ================= TRAIN =================
+def run_neat():
+    global extractor, env, best_fitness
+
+    env, obs_shape, _, _ = make_snake(
+        num_envs=1, num_snakes=NUM_SNAKES,
+        height=HEIGHT, width=WIDTH,
+        snake_length=SNAKE_LENGTH,
+        reward_dict={
+            'fruit': +10.0, # Rất cao: Khuyến khích ăn mồi tối đa
+            'kill': +0.0, # Không thưởng: Không khuyến khích đánh nhau
+            'lose': -20.0, # Phạt nặng khi chết
+            'win': +0.0,
+            'time': -0.03, # Phạt nhẹ: Để nó thong thả tìm mồi
+        }
+    )
+    obs_shape = env.observation_space.shape
+    extractor = FeatureExtractor(CHECKPOINT_DQN_PATH, obs_shape)
+    create_neat_config()
+
+    config = neat.Config(
+        neat.DefaultGenome,
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet,
+        neat.DefaultStagnation,
+        NEAT_CONFIG_FILENAME
+    )
+
+    pop = neat.Population(config)   # 🔥 QUAN TRỌNG
+
+    # BÂY GIỜ innovation_tracker ĐÃ CÓ
+    init_genome = fc3_to_genome(extractor.model.fc3, config)
+    best_fitness = -1e9
+
+    # with open(RESULT_FILENAME, 'wb') as f:
+    #     pickle.dump({
+    #         'dqn_state_dict': extractor.model.state_dict(),
+    #         'neat_genome': init_genome,
+    #         'neat_config': config
+    #     }, f)
+
+    save_data = {
+        'dqn_state_dict': extractor.model.state_dict(),
+        'neat_genome': init_genome,
+        'neat_config': config
+    }
+    save_checkpoint_safe(save_data, RESULT_FILENAME)
+    pop.add_reporter(neat.StdOutReporter(True))
+    pop.run(eval_genomes, NUM_GENERATIONS)
+
+def render_winner(dqn_checkpoint, winner_pickle, neat_cfg_path=None, episodes=1, render=True, num_snakes=NUM_SNAKES, max_steps=256, sleep=0.03):
+    """
+    Load a saved hybrid checkpoint and render episodes.
+    Handles both Single Snake (H,W,C) and Multi Snake (N,H,W,C) dimensions correctly.
+    """
+    import time
+    from marlenv.marlenv.wrappers import RenderGUI
+
+    if not os.path.exists(winner_pickle):
+        raise FileNotFoundError("Winner pickle not found: " + str(winner_pickle))
+
+    # --- 1. Load Data ---
+    with open(winner_pickle, 'rb') as f:
+        data = pickle.load(f)
+
+    dqn_state = data.get('dqn_state_dict', None)
+    neat_genome = data.get('neat_genome', None)
+    neat_config_saved = data.get('neat_config', None)
+
+    # --- 2. Setup Environment & Detect Shape ---
+    # Tạo môi trường thực tế sẽ dùng để render
+    arr = ["NEAT"] * 4
+    env, _, _, _ = make_snake(num_envs=1, num_snakes=num_snakes, height=HEIGHT, width=WIDTH, snake_length=SNAKE_LENGTH, vision_range=None, reward_dict=REWARD_DICT)
+    
+    # Lấy mẫu observation đầu tiên để xác định dimension
+    # Reset trả về (obs, info) hoặc obs tùy version, ta xử lý cả 2
+    temp_obs = env.reset()
+    if isinstance(temp_obs, (tuple, list)):
+        temp_obs = temp_obs[0]
+    
+    # LOGIC QUAN TRỌNG: Chuẩn hóa shape cho DQN init
+    # DQN class yêu cầu input_shape phải unpack được 4 giá trị (num_envs, h, w, c)
+    if temp_obs.ndim == 3:
+        # Trường hợp 1 snake: (H, W, C) -> Thêm batch dimension giả: (1, H, W, C)
+        h, w, c = temp_obs.shape
+        dqn_input_shape = (1, h, w, c)
+        print(f"Detected Single Snake Env. Obs shape: {temp_obs.shape} -> DQN Input: {dqn_input_shape}")
+    elif temp_obs.ndim == 4:
+        # Trường hợp Multi snake: (N, H, W, C) -> Giữ nguyên
+        dqn_input_shape = temp_obs.shape
+        print(f"Detected Multi Snake Env. Obs/DQN Input: {dqn_input_shape}")
+    else:
+        raise ValueError(f"Unexpected observation shape: {temp_obs.shape}")
+
+    # --- 3. Build Feature Extractor ---
+    if dqn_state is None and dqn_checkpoint is None:
+        raise ValueError('No DQN state or checkpoint provided to build feature extractor')
+
+    # Khởi tạo model với shape đã chuẩn hóa (4 chiều)
+    fe_model = DQN(dqn_input_shape, 3).to(DEVICE)
+
+    # Load weights
+    if dqn_checkpoint and os.path.exists(dqn_checkpoint):
+        # Nếu load từ file gốc
+        ckpt = torch.load(dqn_checkpoint, map_location=DEVICE, weights_only=False)
+        state = ckpt['policy_net'] if 'policy_net' in ckpt else ckpt
+        fe_model.load_state_dict(state)
+    else:
+        # Nếu load từ file pickle hybrid
+        try:
+            fe_model.load_state_dict(dqn_state)
+        except Exception:
+            # Fallback nếu key có prefix 'module.'
+            new_state = {k.replace('module.', ''): v for k, v in dqn_state.items()}
+            fe_model.load_state_dict(new_state)
+    
+    fe_model.eval()
+    for p in fe_model.parameters():
+        p.requires_grad = False
+
+    # Wrapper xử lý dimension khi embed
+    class _FE_wrapper:
+        def __init__(self, model):
+            self.model = model
+        
+        def embed(self, obs):
+            # obs đầu vào có thể là (H,W,C) hoặc (N,H,W,C)
+            # Chuyển sang numpy array nếu chưa phải
+            if not isinstance(obs, np.ndarray):
+                obs = np.array(obs)
+            
+            # Nếu là (H, W, C), thêm batch dim -> (1, H, W, C)
+            if obs.ndim == 3:
+                obs = np.expand_dims(obs, axis=0)
+            
+            with torch.no_grad():
+                t = torch.from_numpy(obs).to(DEVICE).float()
+                # Gọi forward_features (trả về 128) thay vì forward (trả về 3)
+                return self.model.forward_features(t).cpu().numpy()
+
+    feature_extractor = _FE_wrapper(fe_model)
+
+    # --- 4. Prepare NEAT Network ---
+    net = None
+    if neat_genome is not None:
+        cfg = neat_config_saved
+        if cfg is None and neat_cfg_path and os.path.exists(neat_cfg_path):
+            cfg = neat.Config(neat.DefaultGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet, neat.DefaultStagnation, neat_cfg_path)
+        
+        if cfg:
+            net = neat.nn.FeedForwardNetwork.create(neat_genome, cfg)
+        else:
+            raise ValueError("NEAT config missing.")
+
+    # --- 5. Render Loop ---
+    if render:
+        try:
+            env = RenderGUI(env,
+            save_video=True,
+            video_path="neat.mp4",
+            fps=10)
+        except Exception as e:
+            print(f"Warning: Could not wrap with RenderGUI: {e}")
+
+    # Khởi tạo list để lưu kết quả của tất cả episode
+    all_episodes_mean_rewards = []
+    all_episodes_mean_timelife = []
+
+    for ep in range(episodes):
+        obs = env.reset()
+        if isinstance(obs, (tuple, list)):
+            obs = obs[0]
+
+        dones = [False] * num_snakes
+        ep_rews = [0.0] * num_snakes
+        # Theo dõi số bước sống sót thực tế của từng con rắn
+        snake_timelifes = [0] * num_snakes 
+        step = 0
+
+        while not all(dones) and step < max_steps:
+            step += 1
+            
+            embeddings = feature_extractor.embed(obs)
+            actions = []
+            
+            for i in range(num_snakes):
+                if i >= len(dones) or dones[i]:
+                    actions.append(0) # Hành động giả cho rắn đã chết
+                    continue
+                
+                # Rắn còn sống thì tăng timelife
+                snake_timelifes[i] += 1
+                
+                # NEAT Inference
+                emb_input = embeddings[i] 
+                out = net.activate(emb_input)
+                actions.append(int(np.argmax(out)))
+
+            # Render
+            if render and hasattr(env, 'render'):
+                try: env.render(agent_names=arr) 
+                except: pass
+
+            next_obs, rewards, new_dones, _ = env.step(actions)
+            
+            # Chuẩn hóa format trả về
+            if isinstance(new_dones, np.ndarray): new_dones = new_dones.tolist()
+            if isinstance(rewards, (int, float, np.float32)): rewards = [rewards]
+            if isinstance(new_dones, bool): new_dones = [new_dones]
+
+            for i in range(min(num_snakes, len(rewards))):
+                if not dones[i]: # Chỉ cộng reward nếu rắn chưa chết ở step trước
+                    ep_rews[i] += float(rewards[i])
+                    if new_dones[i]:
+                        dones[i] = True
+
+            obs = next_obs
+            time.sleep(sleep)
+
+        # --- Tính toán log cho Episode hiện tại ---
+        mean_reward_ep = np.mean(ep_rews)
+        mean_timelife_ep = np.mean(snake_timelifes)
+        
+        all_episodes_mean_rewards.append(mean_reward_ep)
+        all_episodes_mean_timelife.append(mean_timelife_ep)
+
+        print(f"[Eval] Ep {ep+1}/{episodes} | "
+              f"Mean Reward: {mean_reward_ep:.2f} | "
+              f"Mean Timelife: {mean_timelife_ep:.1f} steps")
+
+    # --- Tổng kết sau khi chạy xong N episodes ---
+    if episodes > 0:
+        final_mean_reward = np.mean(all_episodes_mean_rewards)
+        final_mean_timelife = np.mean(all_episodes_mean_timelife)
+        
+        print("\n" + "="*50)
+        print(f"FINAL EVALUATION OVER {episodes} EPISODES:")
+        print(f"Overall Mean Reward: {final_mean_reward:.3f}")
+        print(f"Overall Mean Timelife: {final_mean_timelife:.2f} steps")
+        print("="*50)
+
+    try:
+        env.close()
+    except:
+        pass
+
+
+if __name__ == '__main__':
+    # run_neat()
+    # after training, call `render_winner(CHECKPOINT_DQN_PATH, RESULT_FILENAME, NEAT_CONFIG_FILENAME, episodes=3, render=True)`
+    render_winner(CHECKPOINT_DQN_PATH, RESULT_FILENAME, NEAT_CONFIG_FILENAME, episodes=1, render=True)
